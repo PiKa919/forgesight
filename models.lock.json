@@ -1,8 +1,13 @@
 {
+  "_comment": "Pinned model artifacts. `revision` is the Hugging Face commit sha, not a branch name: 'main' moves, and a benchmark that claims a specific artifact must be able to name it. Regenerate with scripts/fetch_models.py, which records the sha it actually downloaded.",
+  "generated_by": "scripts/fetch_models.py",
   "models": {
     "heron": {
       "repo_id": "docling-project/docling-layout-heron",
-      "revision": "main",
+      "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+      "architecture": "RTDetrV2ForObjectDetection",
+      "license": "apache-2.0",
+      "attribution": "Livathinos et al., 'Advanced Layout Analysis Models for Docling', arXiv:2509.11720",
       "files": {
         "config.json": {
           "sha256": "fdea30805ce2f5666b147fca941dcdd27ad468e27d6ed21902207d3da056a97d",
@@ -20,7 +25,10 @@
     },
     "egret-medium": {
       "repo_id": "docling-project/docling-layout-egret-medium",
-      "revision": "main",
+      "revision": "77ede7cc7bed96d853c58f319734803d6ea2ea5c",
+      "architecture": "DFineForObjectDetection",
+      "license": "apache-2.0",
+      "attribution": "Livathinos et al., 'Advanced Layout Analysis Models for Docling', arXiv:2509.11720",
       "files": {
         "config.json": {
           "sha256": "e099589367b56b77d4cfce99b0b0d0b610a66866da1b8c9c291b6de82b21007c",

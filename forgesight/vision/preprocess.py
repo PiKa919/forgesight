@@ -24,7 +24,11 @@ from forgesight.vision.types import (
 )
 
 REF_PROCESSOR_CLASS = "transformers.RTDetrImageProcessor"
-RESCALE = 1.0 / 255.0
+# Division, not multiplication by the reciprocal. The two differ in the last
+# bit of float32 (1 ULP, ~6e-8), and the reference is defined as
+# RTDetrImageProcessor, so the reference has to be reproduced exactly rather
+# than closely.
+RESCALE_DIVISOR = 255.0
 
 
 def load_id2label(config_path) -> dict[int, str]:
@@ -81,7 +85,7 @@ def _resize(page_rgb: np.ndarray, method: str, target: int) -> np.ndarray:
 
 def to_tensor(resized_rgb: np.ndarray) -> np.ndarray:
     """HWC uint8 RGB -> contiguous CHW float32, rescaled to [0,1]."""
-    arr = resized_rgb.astype(np.float32) * RESCALE
+    arr = resized_rgb.astype(np.float32) / RESCALE_DIVISOR
     return np.ascontiguousarray(np.transpose(arr, (2, 0, 1)))
 
 

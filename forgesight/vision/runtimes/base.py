@@ -181,15 +181,23 @@ class OrtModel:
 
 
 def _id2label_for(artifact: ModelArtifact) -> dict[int, str]:
-    """The exported ONNX has no config.json next to it; reuse the source tree."""
-    cfg = Path(artifact.path).parent / "config.json"
-    if cfg.exists():
-        return read_id2label(cfg.parent)
-    for name in ("heron", "egret-medium"):
-        p = Path(__file__).resolve().parents[2] / "models" / name / "config.json"
-        if p.exists():
-            return read_id2label(p.parent)
-    raise ArtifactCorrupt(f"no label map available for {artifact.name}")
+    """The label map for an exported artifact.
+
+    Read from the export record that sits beside the ONNX file, because the ORT
+    worker image intentionally does not carry the source model tree. A
+    directory search would work in development and fail in the deployment it
+    was written for, which is the worst combination.
+    """
+    record = Path(artifact.path).with_suffix(".export.json")
+    if not record.exists():
+        raise ArtifactCorrupt(
+            f"no export record beside {Path(artifact.path).name}; the label map "
+            f"is required and is not guessed"
+        )
+    raw = json.loads(record.read_text()).get("id2label")
+    if not raw:
+        raise ArtifactCorrupt(f"export record for {artifact.name} has no id2label")
+    return {int(k): v for k, v in raw.items()}
 
 
 def _graph_opt(level: str):

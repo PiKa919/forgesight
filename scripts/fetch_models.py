@@ -1,58 +1,72 @@
+"""Fetch the pinned model weights and verify every hash.
+
+Refuses to continue if a downloaded file does not match the lockfile. A model
+that quietly differs from the recorded sha would invalidate every number in the
+report while still running, which is the worst possible failure mode.
+"""
+
+from __future__ import annotations
+
+import json
 import os
 import sys
-import json
-import argparse
 from pathlib import Path
-from huggingface_hub import hf_hub_download
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from forgesight.vision.models_lock import compute_sha256
+os.environ.setdefault("HF_HOME", str(Path(__file__).resolve().parents[1] / ".hf_home"))
 
-PINNED_MODELS = {
-    "heron": {
-        "repo_id": "docling-project/docling-layout-heron",
-        "revision": "main",
-        "files": ["config.json", "preprocessor_config.json", "model.safetensors"]
-    },
-    "egret-medium": {
-        "repo_id": "docling-project/docling-layout-egret-medium",
-        "revision": "main",
-        "files": ["config.json", "preprocessor_config.json", "model.safetensors"]
-    }
-}
+from forgesight.settings import get_settings  # noqa: E402
+from forgesight.vision.export_onnx import file_sha256  # noqa: E402
 
-def main():
-    parser = argparse.ArgumentParser(description="Fetch and verify pinned model artifacts from HuggingFace.")
-    parser.add_argument("--dest", type=Path, default=Path("models"), help="Destination directory for model files")
-    parser.add_argument("--lock", type=Path, default=Path("models.lock.json"), help="Path to output lockfile")
-    args = parser.parse_args()
-    
-    lock_data = {"models": {}}
-    for key, spec in PINNED_MODELS.items():
-        model_dir = args.dest / key
-        model_dir.mkdir(parents=True, exist_ok=True)
-        file_meta = {}
-        print(f"Fetching {key} from {spec['repo_id']}...")
-        for fname in spec["files"]:
-            dl_path = hf_hub_download(
-                repo_id=spec["repo_id"],
+
+def fetch(force: bool = False) -> int:
+    from huggingface_hub import hf_hub_download
+
+    s = get_settings()
+    lock_path = Path(__file__).resolve().parents[1] / "models.lock.json"
+    lock = json.loads(lock_path.read_text())
+
+    failures = 0
+    for name, entry in lock["models"].items():
+        target = s.models_dir / name
+        target.mkdir(parents=True, exist_ok=True)
+        print(f"== {name} @ {entry['revision'][:12]} ({entry['repo_id']})")
+        for fname, meta in entry["files"].items():
+            dest = target / fname
+            if not force and dest.exists() and file_sha256(dest) == meta["sha256"]:
+                print(f"   {fname:28s} ok (already present)")
+                continue
+            # revision= is a commit sha, so a moving branch cannot change what we get.
+            got = hf_hub_download(
+                repo_id=entry["repo_id"],
                 filename=fname,
-                revision=spec["revision"],
-                local_dir=model_dir
+                revision=entry["revision"],
+                cache_dir=s.hf_home / "hub",
             )
-            p = Path(dl_path)
-            file_meta[fname] = {
-                "sha256": compute_sha256(p),
-                "size": p.stat().st_size
-            }
-        lock_data["models"][key] = {
-            "repo_id": spec["repo_id"],
-            "revision": spec["revision"],
-            "files": file_meta
-        }
-    
-    args.lock.write_text(json.dumps(lock_data, indent=2))
-    print(f"Locked model artifacts to {args.lock}")
+            src = Path(got)
+            actual = file_sha256(src)
+            if actual != meta["sha256"]:
+                print(
+                    f"   {fname:28s} SHA MISMATCH\n"
+                    f"      expected {meta['sha256']}\n"
+                    f"      actual   {actual}",
+                    file=sys.stderr,
+                )
+                failures += 1
+                continue
+            dest.write_bytes(src.read_bytes())
+            print(f"   {fname:28s} verified {actual[:12]}")
+    return failures
+
+
+def main() -> int:
+    force = "--force" in sys.argv
+    failures = fetch(force=force)
+    if failures:
+        print(f"\n{failures} artifact(s) failed verification", file=sys.stderr)
+        return 1
+    print("\nall pinned artifacts present and verified")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
