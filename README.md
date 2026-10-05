@@ -59,7 +59,7 @@ Full instructions, including the compose stack, are in
 
 ## Honest results
 
-Measured on an Apple M5 (4P+6E), macOS 27.0.1, torch 2.14.1, ORT 1.30.0, with
+Measured on an Apple M5 (4P+6E), macOS 27.0.1, torch 2.14.1 (CPU), ORT 1.30.0, with
 the protocol run on battery power and Low Power Mode on — conditions the
 benchmark refuses by default, recorded in the report for that reason.
 
@@ -76,6 +76,16 @@ interval is a seeded bootstrap over the trial p95s.
 this host, this OS, these library versions and this date, and the report says so
 on its face. [data/reports/](data/reports/) holds the generated report and the raw
 sample files every number is read from.
+
+### Both runtimes are CPU-only, deliberately
+
+The comparison above is only fair if both sides carry the same kind of build. On
+Linux, `uv.lock` resolves torch to `2.14.1+cpu` rather than PyPI's CUDA wheel —
+because initialising a CUDA context reserves host memory that has nothing to do
+with the model, and a CUDA torch would have inflated the torch pool's peak RSS
+while the ONNX pool's figure stayed honest. That is the measurement this project
+exists to make, so the image sizes are 2.1 GB (torch) and 1.3 GB (ORT, with no
+torch at all).
 
 ### The memory model did not reproduce
 

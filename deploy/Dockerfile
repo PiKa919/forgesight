@@ -46,11 +46,18 @@ COPY pyproject.toml uv.lock ./
 #
 # The `|| true` is scoped to apt-get on purpose: it exists so a purge failure
 # cannot fail the build, and it must not be able to mask a failed install.
+#
+# --extra-index-url points at PyTorch's CPU index, because uv.lock resolves torch
+# to 2.14.1+cpu on Linux (see pyproject.toml for why CPU matters more here than
+# image size) and uv export does not emit index directives. Without this the
+# install would look for a +cpu wheel on PyPI, where it does not exist. The export
+# still carries the wheel's hashes, so the artifact is verified after download.
 RUN pip install --no-cache-dir uv \
  && if [ "$INSTALL_EXTRAS" = "torch" ]; then \
       uv export --frozen --no-dev --no-emit-project --format requirements-txt \
         -o /tmp/req.txt --extra torch --extra ort --extra export \
-      && uv pip install --system --no-cache -r /tmp/req.txt; \
+      && uv pip install --system --no-cache --index-strategy unsafe-best-match \
+        --extra-index-url https://download.pytorch.org/whl/cpu -r /tmp/req.txt; \
     else \
       uv export --frozen --no-dev --no-emit-project --format requirements-txt \
         -o /tmp/req.txt --extra ort --extra export \

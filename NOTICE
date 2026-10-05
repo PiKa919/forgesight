@@ -40,6 +40,12 @@ repositories.
 Weights are downloaded on demand by `scripts/fetch_models.py`, verified against
 the recorded sha256, and are not committed to this repository.
 
+On Linux the build resolves torch from PyTorch's CPU index (2.14.1+cpu) rather
+than from PyPI, because the Linux wheels on PyPI are CUDA builds. No NVIDIA or
+CUDA component is redistributed here, and none is required to run. See
+pyproject.toml for the measurement reason and docs/runbook.md for the measured
+effect on image size.
+
 The exported ONNX files under artifacts/ are derived works of the weights above
 and are produced by this project's `scripts/export_models.py`. Each carries its
 own sha256 and a record of the parent weights' sha, the exporter, the opset and

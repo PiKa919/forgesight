@@ -25,6 +25,35 @@ The same applies to the containers: the `models` and `artifacts` volumes are
 bind-mounted from the host for exactly this reason. A fresh clone with empty
 volumes boots a healthy API that cannot process a page.
 
+### Why the containers use CPU-only torch
+
+On Linux, `uv.lock` resolves torch to **2.14.1+cpu** rather than the PyPI wheel,
+which is a CUDA build. `uv lock` does this automatically, so `make install` and
+`podman compose build` agree without extra flags.
+
+The reason is measurement integrity rather than disk space. Initialising a CUDA
+context reserves host memory that has nothing to do with the model, and the
+headline output of this project is a **per-runtime peak RSS figure**. A CUDA
+torch in the torch worker would inflate exactly the number the system exists to
+measure, while the ONNX worker's figure stayed honest — so the comparison would
+have been structurally unfair, in a direction that flattered whichever runtime
+got the smaller image.
+
+Measured on the build host:
+
+| image | size | torch | CUDA |
+|---|---|---|---|
+| `INSTALL_EXTRAS=torch` | 2.1 GB | `2.14.1+cpu` | not compiled in |
+| `INSTALL_EXTRAS=ort` | 1.3 GB | absent | n/a |
+
+Both models run on the CPU-only torch build: `heron` in 4550 ms and
+`egret-medium` in 1627 ms for a single 640×640 page on 4 threads, at 827 MB peak
+RSS.
+
+macOS is unaffected. The marker is `sys_platform == 'linux'`, so `make install`
+on the M5 still gets the native PyPI wheel, which is also CPU-only — there is no
+CUDA build for macOS.
+
 Then four processes, in four terminals:
 
 ```bash

@@ -38,6 +38,30 @@ ort = ["onnx>=1.16", "onnxruntime>=1.19"]
 # viable path for these architectures is that exporter.
 export = ["onnx>=1.16", "onnxscript>=0.7"]
 
+# On Linux, PyPI's torch wheels are CUDA builds. That matters here for a specific
+# reason rather than disk space: initialising a CUDA context reserves host memory
+# that has nothing to do with the model, and this project's headline output is a
+# per-runtime peak RSS figure. A CUDA torch in the torch worker would inflate
+# exactly the number the system exists to measure, and the ONNX worker's number
+# would remain honest -- so the comparison would be structurally unfair.
+#
+# The CPU wheels are only published on PyTorch's own index, so the resolution is
+# pointed there for Linux. Markers keep macOS on PyPI, so local development on the
+# M5 is unaffected, and `explicit = true` means no other package may use it.
+#
+# This lives here rather than in deploy/Dockerfile because it is a property of the
+# dependency graph, and a Dockerfile hack would have to text-filter a
+# hash-checked requirements file -- dropping nvidia-* and cuda-* entries along with
+# torch, and duplicating the version pin. Here it is part of the lock.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+torchvision = { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",
