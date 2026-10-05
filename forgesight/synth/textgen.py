@@ -10,31 +10,13 @@ from __future__ import annotations
 
 import numpy as np
 
-NOUNS = """system process memory model runtime worker queue batch page tensor kernel
-latency throughput cache buffer tensor stream schema record ledger release
-candidate profile dataset manifest threshold calibration admission pipeline
-segmentation detection layout document section paragraph header footer caption
-footnote formula table figure column region boundary vector matrix tensor
-signal sample window trace counter gauge sensor frame packet request response
-payload artifact manifest revision commit branch merge pull review gate budget
-""".split()
+NOUNS = ["system", "process", "memory", "model", "runtime", "worker", "queue", "batch", "page", "tensor", "kernel", "latency", "throughput", "cache", "buffer", "tensor", "stream", "schema", "record", "ledger", "release", "candidate", "profile", "dataset", "manifest", "threshold", "calibration", "admission", "pipeline", "segmentation", "detection", "layout", "document", "section", "paragraph", "header", "footer", "caption", "footnote", "formula", "table", "figure", "column", "region", "boundary", "vector", "matrix", "tensor", "signal", "sample", "window", "trace", "counter", "gauge", "sensor", "frame", "packet", "request", "response", "payload", "artifact", "manifest", "revision", "commit", "branch", "merge", "pull", "review", "gate", "budget"]
 
-VERBS = """measure compute allocate release reclaim persist enqueue dequeue claim renew
-expire retry recover render preprocess postprocess quantize export import
-verify record report compare score rank sample batch stream decode encode
-recover reclaim drain compact shard replicate reconcile promote rollback
-verify observe predict classify detect segment cluster embed
-""".split()
+VERBS = ["measure", "compute", "allocate", "release", "reclaim", "persist", "enqueue", "dequeue", "claim", "renew", "expire", "retry", "recover", "render", "preprocess", "postprocess", "quantize", "export", "import", "verify", "record", "report", "compare", "score", "rank", "sample", "batch", "stream", "decode", "encode", "recover", "reclaim", "drain", "compact", "shard", "replicate", "reconcile", "promote", "rollback", "verify", "observe", "predict", "classify", "detect", "segment", "cluster", "embed"]
 
-ADJECTIVES = """bounded durable fenced pinned immutable content-addressed idempotent
-isolated bounded deterministic reproducible calibrated staggered throttled
-observable replayable resumable idempotent sparse dense nested static dynamic
-stable unstable legacy modern primary secondary tertiary
-""".split()
+ADJECTIVES = ["bounded", "durable", "fenced", "pinned", "immutable", "content-addressed", "idempotent", "isolated", "bounded", "deterministic", "reproducible", "calibrated", "staggered", "throttled", "observable", "replayable", "resumable", "idempotent", "sparse", "dense", "nested", "static", "dynamic", "stable", "unstable", "legacy", "modern", "primary", "secondary", "tertiary"]
 
-ADVERBS = """safely quickly slowly exactly nearly always never often rarely
-deterministically probabilistically measurably repeatably efficiently
-""".split()
+ADVERBS = ["safely", "quickly", "slowly", "exactly", "nearly", "always", "never", "often", "rarely", "deterministically", "probabilistically", "measurably", "repeatably", "efficiently"]
 
 MODES = ("assert", "return", "yield", "raise", "await", "break", "continue")
 

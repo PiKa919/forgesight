@@ -18,6 +18,7 @@ silently taking a different code path.
 
 from __future__ import annotations
 
+import contextlib
 import enum
 import re
 import threading
@@ -67,7 +68,7 @@ class _SqliteConn:
     def __init__(self, raw: Any):
         self._raw = raw
 
-    def execute(self, sql: str, params: Any = ()) -> "_SqliteCursor":
+    def execute(self, sql: str, params: Any = ()) -> _SqliteCursor:
         cur = self._raw.execute(sql, _bind(sql, params))
         return _SqliteCursor(cur)
 
@@ -297,10 +298,8 @@ class SqlitePool:
     def close(self) -> None:
         with self._lock:
             for c in self._all:
-                try:
+                with contextlib.suppress(Exception):
                     c.close()
-                except Exception:
-                    pass
             self._all.clear()
 
 
@@ -361,9 +360,8 @@ class PostgresPool:
 
     @contextmanager
     def write(self) -> Iterator[Any]:
-        with self._pool.connection() as conn:
-            with conn.transaction():
-                yield _PsycopgConn(conn)
+        with self._pool.connection() as conn, conn.transaction():
+            yield _PsycopgConn(conn)
 
     def close(self) -> None:
         self._pool.close()

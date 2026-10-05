@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections.abc import Callable
 
@@ -22,12 +23,10 @@ class ThreadingCancelToken:
             self._event.set()
             callbacks = list(self._callbacks)
         for cb in callbacks:
-            try:
+            # A failing cancel hook must not stop the token being observed by the
+            # worker's own polling checks.
+            with contextlib.suppress(Exception):
                 cb()
-            except Exception:
-                # A failing cancel hook must not prevent the token from being
-                # observed by the worker's own polling checks.
-                pass
 
     def on_set(self, cb: Callable[[], None]) -> None:
         with self._lock:

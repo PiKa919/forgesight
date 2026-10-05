@@ -3,7 +3,7 @@ import pytest
 
 from forgesight.synth.generator import generate_page
 from forgesight.synth.gt_validate import validate_page
-from forgesight.synth.templates import TEMPLATES, EMITTED_CLASSES
+from forgesight.synth.templates import EMITTED_CLASSES, TEMPLATES
 
 ALL_TEMPLATES = sorted(TEMPLATES)
 
@@ -22,7 +22,7 @@ def test_every_template_renders(template):
 def test_boxes_are_tight_and_in_bounds(template):
     page = generate_page(template=template, seed=11, dpi=150)
     w, h = page["page_size_px"]
-    for box, lbl in zip(page["boxes"], page["labels"]):
+    for box, lbl in zip(page["boxes"], page["labels"], strict=False):
         x1, y1, x2, y2 = box
         assert 0 <= x1 < x2 <= w, f"{template}/{lbl} x out of range: {box} (w={w})"
         assert 0 <= y1 < y2 <= h, f"{template}/{lbl} y out of range: {box} (h={h})"
@@ -55,7 +55,7 @@ def test_labels_are_emitted_classes_with_valid_ids():
     for t in ALL_TEMPLATES:
         for seed in range(6):
             p = generate_page(template=t, seed=seed, dpi=150)
-            for lbl, cid in zip(p["labels"], p["class_ids"]):
+            for lbl, cid in zip(p["labels"], p["class_ids"], strict=False):
                 assert lbl in EMITTED_CLASSES
                 assert CLASS_TO_ID[lbl] == cid
                 found.add(lbl)

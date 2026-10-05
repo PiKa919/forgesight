@@ -11,7 +11,9 @@ and the exported ONNX graphs carry a dynamic batch axis.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -35,8 +37,6 @@ def file_sha256(path: Path) -> str:
 
 
 def read_id2label(model_dir: Path) -> dict[int, str]:
-    import json
-
     cfg = json.loads((model_dir / "config.json").read_text())
     return {int(k): v for k, v in cfg["id2label"].items()}
 
@@ -63,7 +63,7 @@ def verify_artifact(path: Path, expected_sha: str) -> None:
 class TorchRuntime:
     name = "torch"
 
-    def load(self, artifact: ModelArtifact, profile: RuntimeProfile) -> "TorchModel":
+    def load(self, artifact: ModelArtifact, profile: RuntimeProfile) -> TorchModel:
         return TorchModel(artifact, profile)
 
 
@@ -77,10 +77,8 @@ class TorchModel:
         torch.set_num_threads(profile.intra_op_threads)
         # set_num_interop_threads may only be called once, before any parallel
         # region has started. Ignore the RuntimeError if work is already live.
-        try:
+        with contextlib.suppress(RuntimeError):
             torch.set_num_interop_threads(profile.inter_op_threads)
-        except RuntimeError:
-            pass
 
         model_dir = Path(artifact.path)
         verify_artifact(model_dir / "model.safetensors", artifact.sha256)
@@ -116,7 +114,7 @@ class TorchModel:
 class OrtruntimeFactory:
     name = "onnxruntime"
 
-    def load(self, artifact: ModelArtifact, profile: RuntimeProfile) -> "OrtModel":
+    def load(self, artifact: ModelArtifact, profile: RuntimeProfile) -> OrtModel:
         return OrtModel(artifact, profile)
 
 
@@ -171,7 +169,7 @@ class OrtModel:
         if cancel.is_set():
             raise Cancelled()
 
-        by_name = dict(zip(self._out_names, outs))
+        by_name = dict(zip(self._out_names, outs, strict=True))
         return RawOutputs(
             logits=np.asarray(by_name["logits"]),
             boxes=np.asarray(by_name["pred_boxes"]),

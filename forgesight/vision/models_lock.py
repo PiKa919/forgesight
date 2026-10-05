@@ -1,6 +1,7 @@
-import json
 import hashlib
+import json
 from pathlib import Path
+
 
 def compute_sha256(file_path: Path) -> str:
     """Compute sha256 checksum of a file streaming in 1MB chunks."""

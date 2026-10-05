@@ -20,7 +20,6 @@ from PIL import Image
 from forgesight.vision.types import (
     PreparedItem,
     PreprocessProfile,
-    canonical_hash,
     label_map_hash,
 )
 
@@ -103,7 +102,7 @@ class Preprocessor:
             return [(page_rgb, None)]
 
         # Split along the long axis into 2 tiles with overlap (design §8.8).
-        overlap_px = int(round(long_side * p.tile_overlap))
+        overlap_px = round(long_side * p.tile_overlap)
         if w >= h:
             split = w // 2
             a, b = page_rgb[:, : split + overlap_px], page_rgb[:, split:]

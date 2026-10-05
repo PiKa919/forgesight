@@ -26,7 +26,6 @@ from forgesight.synth.templates import (
     CLASS_TO_ID,
     EMITTED_CLASSES,
     TEMPLATES,
-    Box,
 )
 
 GENERATOR = "forgesight-synth"

@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
 import numpy as np
@@ -124,7 +124,7 @@ class PreprocessProfile:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "PreprocessProfile":
+    def from_dict(cls, d: dict) -> PreprocessProfile:
         return cls(**d)
 
 
@@ -152,7 +152,7 @@ class RuntimeProfile:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "RuntimeProfile":
+    def from_dict(cls, d: dict) -> RuntimeProfile:
         return cls(**d)
 
 

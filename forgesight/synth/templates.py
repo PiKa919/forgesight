@@ -126,7 +126,6 @@ class Layout:
         for ln in lines:
             self.c.drawString(x, y - ascent, ln)
             y -= leading
-        height = (y_top - y) + descent
         widest = max(self.c.stringWidth(ln, font, size) for ln in lines)
         # Bound the box to real ink: first line's ink starts at y_top (its
         # baseline is y_top - ascent), and the last line's descenders reach

@@ -18,14 +18,9 @@ os.environ.setdefault("HF_HOME", str(REPO_ROOT / ".hf_home"))
 from forgesight.synth.generator import generate_page  # noqa: E402
 from forgesight.synth.templates import TEMPLATES  # noqa: E402
 from tests.support import (  # noqa: E402
-    ARTIFACTS_DIR,
-    MODEL_NAMES,
     MODELS_DIR,
-    have_onnx,
-    have_weights,
-    requires_onnx,
-    requires_weights,
 )
+
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:

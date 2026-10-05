@@ -19,7 +19,7 @@ def _rotate(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     angle = float(rng.uniform(-1.5, 1.5))
     h, w = img.shape[:2]
     m = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-    border = int(round(max(h, w) * 0.02)) + 2
+    border = round(max(h, w) * 0.02) + 2
     return cv2.warpAffine(
         img, m, (w + 2 * border, h + 2 * border), flags=cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255),
@@ -32,7 +32,7 @@ def _blur(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
 
 
 def _jpeg(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    q = int(rng.integers(35, 60))
+    q = int(rng.integers(35, 61))
     ok, enc = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), q])
     if not ok:
         return img

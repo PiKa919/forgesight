@@ -69,7 +69,7 @@ def validate_page(page: dict) -> list[GtIssue]:
         return issues
 
     inside = np.zeros((h, w), dtype=bool)
-    for i, (box, lbl) in enumerate(zip(boxes, labels)):
+    for i, (box, lbl) in enumerate(zip(boxes, labels, strict=True)):
         x1, y1, x2, y2 = box
         if not (0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h):
             issues.append(

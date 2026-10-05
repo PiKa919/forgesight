@@ -1,6 +1,7 @@
 import json
-from pathlib import Path
+
 from forgesight.vision.models_lock import verify_model_artifacts
+
 
 def test_models_lock_verification(tmp_path):
     lock_file = tmp_path / "test_lock.json"

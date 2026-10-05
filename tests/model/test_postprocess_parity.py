@@ -18,7 +18,6 @@ import pytest
 from forgesight.vision.postprocess import postprocess_batch
 from forgesight.vision.preprocess import Preprocessor, make_profile
 from forgesight.vision.types import RawOutputs
-
 from tests.support import MODEL_NAMES, MODELS_DIR, requires_weights
 
 TOL = 1e-4
@@ -66,10 +65,10 @@ def test_numpy_postprocess_matches_transformers(model_name, id2label):
 
     max_score_diff = 0.0
     max_box_diff = 0.0
-    for det, score, label, box in zip(got, exp_scores, exp_labels, exp_boxes):
+    for det, score, label, box in zip(got, exp_scores, exp_labels, exp_boxes, strict=False):
         assert det.class_id == int(label), f"class {det.class_id} vs {int(label)}"
         max_score_diff = max(max_score_diff, abs(det.score - float(score)))
-        for ours_c, theirs_c in zip(det.box, box):
+        for ours_c, theirs_c in zip(det.box, box, strict=False):
             max_box_diff = max(max_box_diff, abs(ours_c - float(theirs_c)))
 
     assert max_score_diff < TOL, f"score drift {max_score_diff}"

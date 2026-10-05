@@ -1,7 +1,9 @@
 import warnings
 from pathlib import Path
+
 import torch
 from transformers import AutoModelForObjectDetection
+
 
 def export_to_onnx(model_dir: Path, output_path: Path, opset: int = 17) -> Path:
     """Export AutoModelForObjectDetection model to standalone ONNX using TorchScript exporter.

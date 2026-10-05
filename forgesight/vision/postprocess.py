@@ -101,7 +101,6 @@ def postprocess_batch(
         # extent in page pixels, so a full-extent box lands on the page edge.
         sx, sy = item.scale
         ox, oy = item.tile_origin or (0, 0)
-        page_w, page_h = item.page_size
         x1 = sel_boxes[:, 0] * sx + ox
         y1 = sel_boxes[:, 1] * sy + oy
         x2 = sel_boxes[:, 2] * sx + ox
