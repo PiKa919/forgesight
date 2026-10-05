@@ -8,16 +8,26 @@ __pycache__/
 !.env.example
 artifacts/
 models/
-data/
+# Local scratch: databases, objects, uploads. `data/` itself is excluded below
+# and then the reports are un-ignored, because git cannot re-include a file
+# while any parent directory is excluded -- so the order here matters.
+data/*
+!data/reports/
+# The measured reports are the evidence behind the headline numbers in the
+# README, tracked with the raw per-trial samples every number is read from. A
+# benchmark nobody can audit is a claim, not a measurement. ~180 KB.
+!data/reports/**
 *.onnx
 *.safetensors
 *.bin
 *.db
 *.db-wal
 *.db-shm
-data/
 web/node_modules/
 web/dist/
 .hf_home/
 .run/
 .playwright-mcp/
+# Local PGDATA checkout for scripts/remote_pg.sh, if run against this machine
+# rather than a remote host. A database directory must never be committed.
+.remote/

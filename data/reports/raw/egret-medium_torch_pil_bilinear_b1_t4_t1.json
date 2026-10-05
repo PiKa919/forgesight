@@ -1,0 +1,413 @@
+{
+  "config": "egret-medium/torch/pil_bilinear/b1/t4",
+  "trial": 1,
+  "summary": {
+    "throughput_pages_per_s": 3.332,
+    "queue_inclusive_p50_ms": 296.14,
+    "queue_inclusive_p95_ms": 327.22,
+    "queue_inclusive_p99_ms": 331.32,
+    "service_p50_ms": 296.14,
+    "service_p95_ms": 327.22,
+    "peak_rss_bytes": 991363072,
+    "steady_rss_bytes": 991363072,
+    "n_pages": 44
+  },
+  "samples": [
+    {
+      "page_id": "p0",
+      "queue_inclusive_ms": 317.4284999840893,
+      "service_ms": 317.4284999840893,
+      "preprocess_ms": 11.482416972285137,
+      "infer_ms": 305.9460000076797,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 773505024
+    },
+    {
+      "page_id": "p1",
+      "queue_inclusive_ms": 318.96895900717936,
+      "service_ms": 318.96895900717936,
+      "preprocess_ms": 12.111584015656263,
+      "infer_ms": 306.85720799374394,
+      "postprocess_ms": 0.000166997779160738,
+      "peak_rss": 778256384
+    },
+    {
+      "page_id": "p2",
+      "queue_inclusive_ms": 328.64741698722355,
+      "service_ms": 328.64741698722355,
+      "preprocess_ms": 12.016458000289276,
+      "infer_ms": 316.6307919891551,
+      "postprocess_ms": 0.000166997779160738,
+      "peak_rss": 802275328
+    },
+    {
+      "page_id": "p3",
+      "queue_inclusive_ms": 312.93920800089836,
+      "service_ms": 312.93920800089836,
+      "preprocess_ms": 11.831375013571233,
+      "infer_ms": 301.1077079863753,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 805388288
+    },
+    {
+      "page_id": "p4",
+      "queue_inclusive_ms": 295.0490830116905,
+      "service_ms": 295.0490830116905,
+      "preprocess_ms": 11.453541024820879,
+      "infer_ms": 283.59541698591784,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p5",
+      "queue_inclusive_ms": 293.9584589912556,
+      "service_ms": 293.9584589912556,
+      "preprocess_ms": 11.058292002417147,
+      "infer_ms": 282.90008299518377,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p6",
+      "queue_inclusive_ms": 294.1089160158299,
+      "service_ms": 294.1089160158299,
+      "preprocess_ms": 11.183166003320366,
+      "infer_ms": 282.92566700838506,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p7",
+      "queue_inclusive_ms": 294.97995899873786,
+      "service_ms": 294.97995899873786,
+      "preprocess_ms": 11.121709016151726,
+      "infer_ms": 283.8579999806825,
+      "postprocess_ms": 0.0002500019036233425,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p8",
+      "queue_inclusive_ms": 297.12308300076984,
+      "service_ms": 297.12308300076984,
+      "preprocess_ms": 10.4032079980243,
+      "infer_ms": 286.7198330059182,
+      "postprocess_ms": 4.1996827349066734e-05,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p9",
+      "queue_inclusive_ms": 296.3005830242764,
+      "service_ms": 296.3005830242764,
+      "preprocess_ms": 10.52937502390705,
+      "infer_ms": 285.77108299941756,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p10",
+      "queue_inclusive_ms": 293.10504099703394,
+      "service_ms": 293.10504099703394,
+      "preprocess_ms": 10.45837500714697,
+      "infer_ms": 282.6464579848107,
+      "postprocess_ms": 0.00020800507627427578,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p11",
+      "queue_inclusive_ms": 292.8901250124909,
+      "service_ms": 292.8901250124909,
+      "preprocess_ms": 10.358833009377122,
+      "infer_ms": 282.53116700216196,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p12",
+      "queue_inclusive_ms": 292.78308400535025,
+      "service_ms": 292.78308400535025,
+      "preprocess_ms": 10.401791980257258,
+      "infer_ms": 282.38112502731383,
+      "postprocess_ms": 0.000166997779160738,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p13",
+      "queue_inclusive_ms": 296.25512499478646,
+      "service_ms": 296.25512499478646,
+      "preprocess_ms": 11.84941700194031,
+      "infer_ms": 284.40558299189433,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 805683200
+    },
+    {
+      "page_id": "p14",
+      "queue_inclusive_ms": 294.5548330026213,
+      "service_ms": 294.5548330026213,
+      "preprocess_ms": 11.113082990050316,
+      "infer_ms": 283.44170801574364,
+      "postprocess_ms": 4.1996827349066734e-05,
+      "peak_rss": 806895616
+    },
+    {
+      "page_id": "p15",
+      "queue_inclusive_ms": 294.85249999561347,
+      "service_ms": 294.85249999561347,
+      "preprocess_ms": 11.835375014925376,
+      "infer_ms": 283.01695798290893,
+      "postprocess_ms": 0.000166997779160738,
+      "peak_rss": 813121536
+    },
+    {
+      "page_id": "p16",
+      "queue_inclusive_ms": 294.9799170019105,
+      "service_ms": 294.9799170019105,
+      "preprocess_ms": 11.30449998890981,
+      "infer_ms": 283.67533400887623,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 814596096
+    },
+    {
+      "page_id": "p17",
+      "queue_inclusive_ms": 296.14158399635926,
+      "service_ms": 296.14158399635926,
+      "preprocess_ms": 13.8070420071017,
+      "infer_ms": 282.3343749914784,
+      "postprocess_ms": 0.000166997779160738,
+      "peak_rss": 818905088
+    },
+    {
+      "page_id": "p18",
+      "queue_inclusive_ms": 293.32299999077804,
+      "service_ms": 293.32299999077804,
+      "preprocess_ms": 11.312417016597465,
+      "infer_ms": 282.01037499820814,
+      "postprocess_ms": 0.00020797597244381905,
+      "peak_rss": 825081856
+    },
+    {
+      "page_id": "p19",
+      "queue_inclusive_ms": 294.14879201794975,
+      "service_ms": 294.14879201794975,
+      "preprocess_ms": 10.714500007452443,
+      "infer_ms": 283.4342080168426,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 827654144
+    },
+    {
+      "page_id": "p20",
+      "queue_inclusive_ms": 298.50099998293445,
+      "service_ms": 298.50099998293445,
+      "preprocess_ms": 11.175291991094127,
+      "infer_ms": 287.3255000158679,
+      "postprocess_ms": 0.00020797597244381905,
+      "peak_rss": 834011136
+    },
+    {
+      "page_id": "p21",
+      "queue_inclusive_ms": 307.95433299499564,
+      "service_ms": 307.95433299499564,
+      "preprocess_ms": 14.088832976995036,
+      "infer_ms": 293.8653750170488,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 840925184
+    },
+    {
+      "page_id": "p22",
+      "queue_inclusive_ms": 296.9370000064373,
+      "service_ms": 296.9370000064373,
+      "preprocess_ms": 13.990083010867238,
+      "infer_ms": 282.94679199461825,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 847790080
+    },
+    {
+      "page_id": "p23",
+      "queue_inclusive_ms": 296.04029198526405,
+      "service_ms": 296.04029198526405,
+      "preprocess_ms": 11.23425000696443,
+      "infer_ms": 284.8059169773478,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 854032384
+    },
+    {
+      "page_id": "p24",
+      "queue_inclusive_ms": 299.90679200273007,
+      "service_ms": 299.90679200273007,
+      "preprocess_ms": 11.91520900465548,
+      "infer_ms": 287.9914579971228,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 860307456
+    },
+    {
+      "page_id": "p25",
+      "queue_inclusive_ms": 297.6185000152327,
+      "service_ms": 297.6185000152327,
+      "preprocess_ms": 11.202000023331493,
+      "infer_ms": 286.4164159982465,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 866549760
+    },
+    {
+      "page_id": "p26",
+      "queue_inclusive_ms": 303.7454579898622,
+      "service_ms": 303.7454579898622,
+      "preprocess_ms": 13.896291988203302,
+      "infer_ms": 289.8490829975344,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 891863040
+    },
+    {
+      "page_id": "p27",
+      "queue_inclusive_ms": 295.96620801021345,
+      "service_ms": 295.96620801021345,
+      "preprocess_ms": 12.32770801289007,
+      "infer_ms": 283.63837499637157,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 898760704
+    },
+    {
+      "page_id": "p28",
+      "queue_inclusive_ms": 296.7095000203699,
+      "service_ms": 296.7095000203699,
+      "preprocess_ms": 11.264666012721136,
+      "infer_ms": 285.4444590047933,
+      "postprocess_ms": 0.00037500285543501377,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p29",
+      "queue_inclusive_ms": 297.87549999309704,
+      "service_ms": 297.87549999309704,
+      "preprocess_ms": 13.97058297879994,
+      "infer_ms": 283.9048330206424,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p30",
+      "queue_inclusive_ms": 294.5585410052445,
+      "service_ms": 294.5585410052445,
+      "preprocess_ms": 11.801082990132272,
+      "infer_ms": 282.7573330141604,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p31",
+      "queue_inclusive_ms": 294.81212500832044,
+      "service_ms": 294.81212500832044,
+      "preprocess_ms": 12.296041008085012,
+      "infer_ms": 282.5160000065807,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p32",
+      "queue_inclusive_ms": 301.3278750004247,
+      "service_ms": 301.3278750004247,
+      "preprocess_ms": 12.666333001106977,
+      "infer_ms": 288.661458005663,
+      "postprocess_ms": 8.399365469813347e-05,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p33",
+      "queue_inclusive_ms": 295.0794580101501,
+      "service_ms": 295.0794580101501,
+      "preprocess_ms": 11.863541993079707,
+      "infer_ms": 283.2157500088215,
+      "postprocess_ms": 0.00016600824892520905,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p34",
+      "queue_inclusive_ms": 301.3417079928331,
+      "service_ms": 301.3417079928331,
+      "preprocess_ms": 14.078875014092773,
+      "infer_ms": 287.2627500037197,
+      "postprocess_ms": 8.297502063214779e-05,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p35",
+      "queue_inclusive_ms": 331.31570799741894,
+      "service_ms": 331.31570799741894,
+      "preprocess_ms": 12.0800829899963,
+      "infer_ms": 319.23550000647083,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 905035776
+    },
+    {
+      "page_id": "p36",
+      "queue_inclusive_ms": 327.2175000165589,
+      "service_ms": 327.2175000165589,
+      "preprocess_ms": 11.472165992017835,
+      "infer_ms": 315.7451669976581,
+      "postprocess_ms": 0.00016702688299119473,
+      "peak_rss": 975142912
+    },
+    {
+      "page_id": "p37",
+      "queue_inclusive_ms": 296.561000024667,
+      "service_ms": 296.561000024667,
+      "preprocess_ms": 11.821709020296112,
+      "infer_ms": 284.73920800024644,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 981434368
+    },
+    {
+      "page_id": "p38",
+      "queue_inclusive_ms": 295.34612499992363,
+      "service_ms": 295.34612499992363,
+      "preprocess_ms": 11.310249974485487,
+      "infer_ms": 284.03583401814103,
+      "postprocess_ms": 4.100729711353779e-05,
+      "peak_rss": 987676672
+    },
+    {
+      "page_id": "p39",
+      "queue_inclusive_ms": 295.571958005894,
+      "service_ms": 295.571958005894,
+      "preprocess_ms": 12.377999984892085,
+      "infer_ms": 283.1938330200501,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 987676672
+    },
+    {
+      "page_id": "p40",
+      "queue_inclusive_ms": 293.97604198311456,
+      "service_ms": 293.97604198311456,
+      "preprocess_ms": 11.152874998515472,
+      "infer_ms": 282.82312498777173,
+      "postprocess_ms": 4.1996827349066734e-05,
+      "peak_rss": 987676672
+    },
+    {
+      "page_id": "p41",
+      "queue_inclusive_ms": 295.9998330043163,
+      "service_ms": 295.9998330043163,
+      "preprocess_ms": 11.828500020783395,
+      "infer_ms": 284.1712079825811,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 987676672
+    },
+    {
+      "page_id": "p42",
+      "queue_inclusive_ms": 301.33454099996015,
+      "service_ms": 301.33454099996015,
+      "preprocess_ms": 12.022915994748473,
+      "infer_ms": 289.3115420010872,
+      "postprocess_ms": 8.300412446260452e-05,
+      "peak_rss": 987676672
+    },
+    {
+      "page_id": "p43",
+      "queue_inclusive_ms": 296.2512919912115,
+      "service_ms": 296.2512919912115,
+      "preprocess_ms": 11.343291989760473,
+      "infer_ms": 284.9078750004992,
+      "postprocess_ms": 0.00012500095181167126,
+      "peak_rss": 991363072
+    }
+  ]
+}
