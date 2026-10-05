@@ -16,3 +16,5 @@ data/
 web/node_modules/
 web/dist/
 .hf_home/
+.run/
+.playwright-mcp/

@@ -593,3 +593,65 @@ def test_backend_matrix_covers_sqlite_and_reports_postgres():
     assert "sqlite" in DSNS
     if PG_DSN:
         assert DSNS["postgres"].startswith("postgresql://")
+
+
+# -- timestamp resolution ---------------------------------------------------
+
+
+def test_timestamps_keep_sub_second_resolution(env):
+    """SQLite's CURRENT_TIMESTAMP is whole seconds, which cannot measure latency.
+
+    The design asks for clock_timestamp() on cross-process events, which is right
+    on PostgreSQL and silently useless on SQLite: a 300 ms inference and a 1.4 s
+    one both round to the same whole second. The ledger therefore stamps from the
+    application clock, and this pins that the round trip preserves sub-second
+    resolution so the queue-inclusive figure is not 0 s, 1 s or 2 s.
+    """
+    from forgesight.api.repo import delta_ms
+    from forgesight.ledger.claims import now_utc
+
+    pool, ledger, ws = env
+    cat = _seed_catalog(pool, ws)
+    _enqueue(pool, ws, cat, 1)
+    item = ledger.claim("torch", "w", n=1, lease_s=60)[0]
+
+    placeholder = "?" if pool.dialect is Dialect.SQLITE else "%s"
+    with pool.connection() as conn:
+        claimed = conn.fetchone(
+            f"SELECT received_at, claimed_at FROM work_item WHERE id = {placeholder}",
+            (item.id,),
+        )["claimed_at"]
+    assert claimed is not None
+    assert delta_ms(claimed, claimed) == 0.0
+    # A str() of a sub-second value keeps its microseconds, unlike SQLite's own
+    # CURRENT_TIMESTAMP which would already be truncated.
+    assert "." in str(claimed), f"claimed_at lost sub-second precision: {claimed!r}"
+
+    assert now_utc().tzinfo is not None, "timestamps must be timezone-aware"
+
+
+def test_queue_inclusive_latency_is_not_rounded_to_whole_seconds(env):
+    """A fast item must report a fraction of a second, not 0 s or 1 s."""
+    from forgesight.api.repo import delta_ms
+
+    pool, ledger, ws = env
+    cat = _seed_catalog(pool, ws)
+    _enqueue(pool, ws, cat, 1)
+    item = ledger.claim("torch", "w", n=1, lease_s=60)[0]
+    ledger.complete(item, PredictionIn(_dets()))
+
+    placeholder = "?" if pool.dialect is Dialect.SQLITE else "%s"
+    with pool.connection() as conn:
+        row = conn.fetchone(
+            "SELECT received_at, claimed_at, persisted_at FROM work_item "
+            f"WHERE id = {placeholder}",
+            (item.id,),
+        )
+    qi = delta_ms(row["received_at"], row["persisted_at"])
+    svc = delta_ms(row["claimed_at"], row["persisted_at"])
+    assert qi is not None and svc is not None
+    assert qi >= 0 and svc >= 0
+    # Monotonic: claiming happens after receipt, so service cannot exceed the
+    # queue-inclusive figure.
+    assert svc <= qi + 1.0, f"service {svc} > queue-inclusive {qi}"
+    assert qi < 60_000

@@ -25,10 +25,35 @@ from forgesight.db.pool import PoolLike, ph
 from forgesight.ledger.claims import new_id
 from forgesight.settings import get_settings
 
-# A process-local pepper. A real deployment supplies FORGESIGHT_TOKEN_PEPPER via
-# the environment; without one, tokens still do not match anything guessable,
-# but a restart invalidates them, which is why the default is generated.
-_PEPPER = os.environ.get("FORGESIGHT_TOKEN_PEPPER") or secrets.token_hex(16)
+
+# Token hashing is peppered, and the pepper must be the same in *every* process
+# that validates a token. ForgeSight runs at least four (API, one worker per
+# pool, reaper), so a per-process random pepper would mean a token minted by one
+# is rejected by the next -- which is exactly what happened. Resolution order:
+# the environment, then a file in the data directory shared by the processes on
+# this host, then a random value that is clearly a fallback. A deployment with
+# several hosts supplies FORGESIGHT_TOKEN_PEPPER explicitly.
+def _resolve_pepper() -> str:
+    env = os.environ.get("FORGESIGHT_TOKEN_PEPPER")
+    if env:
+        return env
+    try:
+        s = get_settings()
+        s.ensure_dirs()
+        path = s.data_dir / ".token_pepper"
+        if path.exists():
+            value = path.read_text().strip()
+            if value:
+                return value
+        value = secrets.token_hex(32)
+        path.write_text(value + "\n")
+        path.chmod(0o600)
+        return value
+    except Exception:
+        return secrets.token_hex(16)
+
+
+_PEPPER = _resolve_pepper()
 
 bearer = HTTPBearer(auto_error=False)
 

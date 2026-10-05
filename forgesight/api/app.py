@@ -11,12 +11,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from forgesight.api import routes_batches, routes_releases, routes_reports, routes_sessions
 from forgesight.api.deps import get_pool_singleton
 from forgesight.db.migrate import migrate
-from forgesight.settings import get_settings
+from forgesight.settings import REPO_ROOT, get_settings
 
 log = logging.getLogger("forgesight.api")
 
@@ -53,6 +53,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_releases.router)
     app.include_router(routes_reports.router)
 
+    _mount_web(app)
+
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict:
         return {"ok": True, "mode": s.mode, "dialect": get_pool_singleton().dialect.value}
@@ -80,6 +82,38 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     return app
+
+
+def _mount_web(app: FastAPI) -> None:
+    """Serve the built frontend from the API, same origin (design §7).
+
+    Only when a build exists. In development Vite serves the frontend and
+    proxies /v1 here, so mounting is a no-op and the two cannot fight over a
+    route. Serving from one origin in production removes the CORS question and
+    the second base URL entirely.
+    """
+    dist = REPO_ROOT / "web" / "dist"
+    if not (dist / "index.html").exists():
+        return
+    from fastapi.staticfiles import StaticFiles
+
+    # Hashed asset filenames are immutable, so they can be cached hard; index.html
+    # must not be, or a deploy would never reach a returning browser.
+    app.mount(
+        "/assets",
+        StaticFiles(directory=dist / "assets"),
+        name="assets",
+    )
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str = "") -> FileResponse:
+        candidate = dist / path
+        if path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(dist / "index.html")
+
+    log.info("serving the web build from %s", dist)
 
 
 app = create_app()

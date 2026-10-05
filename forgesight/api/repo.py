@@ -28,12 +28,46 @@ def _iso(v) -> str | None:
     return str(v)
 
 
+#: SQLite has no timestamp type: CURRENT_TIMESTAMP comes back as the string
+#: "YYYY-MM-DD HH:MM:SS" in UTC, while psycopg returns aware datetimes. Every
+#: duration therefore goes through this, or the queue-inclusive and service
+#: figures silently come back as None on the SQLite backend.
+_SQLITE_TS = "%Y-%m-%d %H:%M:%S"
+
+
+def as_datetime(value):
+    """Coerce a database timestamp to an aware datetime, or None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        for fmt in (_SQLITE_TS, "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+            try:
+                return datetime.strptime(text, fmt).replace(tzinfo=UTC)
+            except ValueError:
+                continue
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def delta_ms(a, b) -> float | None:
+    """Milliseconds from `a` to `b`, or None if either is missing."""
+    start, end = as_datetime(a), as_datetime(b)
+    if start is None or end is None:
+        return None
+    return round((end - start).total_seconds() * 1000.0, 2)
+
+
 def _ms(a, b) -> float | None:
-    if a is None or b is None:
-        return None
-    if isinstance(a, str) or isinstance(b, str):
-        return None
-    return round((b - a).total_seconds() * 1000.0, 2)
+    return delta_ms(a, b)
 
 
 class WorkspaceRepo:
@@ -319,7 +353,11 @@ class WorkspaceRepo:
             )
 
     def enqueue_items(self, ws: str, batch_id: str, rows: list[tuple[str, str, str, str]]):
-        """rows: (page_id, candidate_id, pool, role)."""
+        """rows: (page_id, candidate_id, pool, role).
+
+        `received_at` is stamped from the application clock rather than by a SQL
+        default, for the resolution reason documented on `ledger.claims.now_utc`.
+        """
         if not rows:
             return
         now = _now()

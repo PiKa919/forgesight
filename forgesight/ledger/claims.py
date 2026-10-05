@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from forgesight.db.pool import Dialect, PoolLike, claim_sql, next_fencing_sql, ph
@@ -34,6 +35,20 @@ from forgesight.vision.types import Detection
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:24]}"
+
+
+def now_utc() -> datetime:
+    """A microsecond-precision UTC timestamp, supplied by the application.
+
+    Design §8.6 asks for `clock_timestamp()` on cross-process events, which is
+    right on PostgreSQL. It is not portable: SQLite's `CURRENT_TIMESTAMP`
+    resolves to whole seconds, so a 300 ms inference and a 1.4 s one both report
+    the same rounded figure and the queue-inclusive latency this system exists to
+    measure comes out as exactly 0 s, 1 s or 2 s. Timestamps are therefore
+    passed in from Python, which gives the same wall-clock semantics on both
+    backends and keeps sub-second resolution.
+    """
+    return datetime.now(UTC)
 
 
 def sql(d: Dialect, postgres: str, sqlite: str) -> str:
@@ -102,6 +117,7 @@ class Ledger:
                     "worker": worker_id,
                     "lease_s": lease_s,
                     "token": token,
+                    "now": now_utc(),
                 },
             )
         return [self._to_claimed(r) for r in rows]
@@ -156,14 +172,16 @@ class Ledger:
         guarded = sql(
             self.d,
             "UPDATE work_item SET state = 'succeeded', "
-            "persisted_at = clock_timestamp(), lease_owner = NULL, lease_expires_at = NULL "
+            "persisted_at = %s, lease_owner = NULL, lease_expires_at = NULL "
             "WHERE id = %s AND fencing_token = %s AND state = 'running' RETURNING id",
             "UPDATE work_item SET state = 'succeeded', "
-            "persisted_at = CURRENT_TIMESTAMP, lease_owner = NULL, lease_expires_at = NULL "
-            "WHERE id = ? AND fencing_token = ? AND state = 'running' RETURNING id",
+            "persisted_at = ? WHERE id = ? AND fencing_token = ? "
+            "AND state = 'running' RETURNING id",
         )
         with self.pool.write() as conn:
-            if conn.fetchone(guarded, (item.id, item.fencing_token)) is None:
+            if conn.fetchone(
+                guarded, (now_utc(), item.id, item.fencing_token)
+            ) is None:
                 return False
             conn.execute(
                 "INSERT INTO prediction(id, workspace_id, work_item_id, candidate_id, "

@@ -196,7 +196,7 @@ SET state = 'running',
     lease_expires_at = clock_timestamp() + (%(lease_s)s * interval '1 second'),
     fencing_token = %(token)s,
     attempts = w.attempts + 1,
-    claimed_at = clock_timestamp()
+    claimed_at = %(now)s
 FROM c
 WHERE w.id = c.id AND w.state = 'queued'
 RETURNING w.*;
@@ -205,10 +205,10 @@ RETURNING w.*;
 UPDATE work_item
 SET state = 'running',
     lease_owner = :worker,
-    lease_expires_at = datetime('now', :lease_s || ' seconds'),
+    lease_expires_at = datetime(:now, :lease_s || ' seconds'),
     fencing_token = :token,
     attempts = attempts + 1,
-    claimed_at = CURRENT_TIMESTAMP
+    claimed_at = :now
 WHERE id IN (
     SELECT id FROM work_item
     WHERE state = 'queued' AND pool = :pool
@@ -265,12 +265,22 @@ class SqlitePool:
         import sqlite3
 
         raw = sqlite3.connect(self._path, timeout=10.0, isolation_level=None)
+        conn = _SqliteConn(raw)
+        # Every connection needs these, not just the first. WAL and the busy
+        # timeout are per-connection, so setting them once at construction leaves
+        # every later connection on SQLite's defaults -- which is how a second
+        # worker process ends up failing with "database is locked" the moment it
+        # tries to claim anything.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=10000")
+        conn.execute("PRAGMA synchronous=NORMAL")
         with self._lock:
             self._all.append(raw)
-        return _SqliteConn(raw)
+        return conn
 
     @property
-    def conn(self):
+    def conn(self) -> _SqliteConn:
         c = getattr(self._local, "conn", None)
         if c is None:
             c = self._new()

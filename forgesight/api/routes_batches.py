@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from PIL import Image
 
 from forgesight.api.deps import Principal, get_pool_singleton, operator
-from forgesight.api.repo import WorkspaceRepo, _iso
+from forgesight.api.repo import WorkspaceRepo, _iso, delta_ms
 from forgesight.api.schemas import (
     BatchListOut,
     BatchOut,
@@ -42,6 +42,7 @@ from forgesight.ingest.validate import (
 from forgesight.ledger.claims import Ledger
 from forgesight.settings import get_settings
 from forgesight.storage.object_store import (
+    FsObjectStore,
     SizeExceeded,
     asset_key,
     build_store,
@@ -331,8 +332,16 @@ def get_item(item_id: str, p: Principal = Depends(operator)) -> ItemOut:
 
 @router.get("/items/{item_id}/image")
 def get_item_image(item_id: str, p: Principal = Depends(operator)):
-    """302 to a short-lived URL, only after the workspace check has passed."""
-    from fastapi.responses import RedirectResponse
+    """The page image, for a page this caller owns.
+
+    On S3 this redirects to a short-lived presigned URL, which is the shape a
+    browser wants: the bytes never pass through the API. The local filesystem
+    store has no signatures to give, and a `file://` URL is not something a
+    browser will load, so the bytes are streamed instead. Either way the
+    workspace check above has already run, so nothing is issued for a page
+    belonging to another workspace.
+    """
+    from fastapi.responses import RedirectResponse, Response
 
     r = repo()
     row = r.get_item(p.workspace_id, item_id)
@@ -341,11 +350,21 @@ def get_item_image(item_id: str, p: Principal = Depends(operator)):
     page = r.get_page(p.workspace_id, row["page_id"])
     if page is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "page not found")
+
+    st = store()
     s = get_settings()
-    # The workspace check above has already run, so the presign is only ever
-    # issued for a page this caller owns.
+    if isinstance(st, FsObjectStore):
+        return Response(
+            content=st.get_bytes(page["object_key"]),
+            media_type="image/png",
+            headers={
+                # Private and short-lived: an image of someone's document should
+                # not sit in a shared cache.
+                "Cache-Control": f"private, max-age={min(s.presign_ttl_s, 300)}",
+            },
+        )
     return RedirectResponse(
-        url=store().presign_get(page["object_key"], s.presign_ttl_s),
+        url=st.presign_get(page["object_key"], s.presign_ttl_s),
         status_code=status.HTTP_302_FOUND,
     )
 
@@ -408,12 +427,9 @@ def _item_timings(row: dict) -> TimingSplit:
 
 
 def _delta_ms(a, b) -> float | None:
-    if a is None or b is None:
-        return None
-    try:
-        return round((b - a).total_seconds() * 1000.0, 2)
-    except TypeError:
-        return None
+    # Routed through the repository's coercion so a SQLite text timestamp and a
+    # psycopg datetime are handled identically.
+    return delta_ms(a, b)
 
 
 def _item_out(r: WorkspaceRepo, ws: str, row: dict) -> ItemOut:
