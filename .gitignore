@@ -9,3 +9,10 @@ data/
 *.onnx
 *.safetensors
 *.bin
+*.db
+*.db-wal
+*.db-shm
+data/
+web/node_modules/
+web/dist/
+.hf_home/
