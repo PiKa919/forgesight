@@ -36,17 +36,27 @@ RUN apt-get update \
 
 WORKDIR /srv
 COPY pyproject.toml uv.lock ./
+
+# --no-emit-project excludes the project itself from the export. Without it the
+# export emits `-e .`, so the install tries to build the package with hatchling,
+# which needs README.md -- not present at this layer. That failed, and the
+# trailing `|| true` swallowed it, producing an image with no dependencies at all
+# that still built successfully. The source is COPYed below and the entrypoints
+# run from /srv, so the project is never needed as an installed package.
+#
+# The `|| true` is scoped to apt-get on purpose: it exists so a purge failure
+# cannot fail the build, and it must not be able to mask a failed install.
 RUN pip install --no-cache-dir uv \
  && if [ "$INSTALL_EXTRAS" = "torch" ]; then \
-      uv export --frozen --no-dev --format requirements-txt -o /tmp/req.txt \
-        --extra torch --extra ort --extra export \
+      uv export --frozen --no-dev --no-emit-project --format requirements-txt \
+        -o /tmp/req.txt --extra torch --extra ort --extra export \
       && uv pip install --system --no-cache -r /tmp/req.txt; \
     else \
-      uv export --frozen --no-dev --format requirements-txt -o /tmp/req.txt \
-        --extra ort --extra export \
+      uv export --frozen --no-dev --no-emit-project --format requirements-txt \
+        -o /tmp/req.txt --extra ort --extra export \
       && uv pip install --system --no-cache -r /tmp/req.txt; \
     fi \
- && apt-get purge -y --auto-remove build-essential || true
+ && (apt-get purge -y --auto-remove build-essential || true)
 
 COPY forgesight ./forgesight
 COPY scripts ./scripts

@@ -34,6 +34,19 @@ def create_session(p: Principal | None = Depends(lambda: None)) -> SessionRespon
             headers={"Retry-After": "60"},
         )
 
+    # Checked before anything is written, so a refused request leaves no orphan
+    # workspace or token behind. With no candidates the seed below would produce
+    # a workspace with no active release, every upload would then be refused, and
+    # the caller would get a valid token and no explanation for a session that
+    # cannot do anything.
+    if not registry(s):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "no model artifacts are registered, so there is nothing to run. "
+            f"Fetch and export them first: expected weights under {s.models_dir} "
+            f"and exports under {s.artifacts_dir} (see docs/runbook.md).",
+        )
+
     ws = r.create_workspace(
         "demo", kind="sandbox" if s.mode == "public" else "local",
         ttl_h=s.sandbox_ttl_hours,

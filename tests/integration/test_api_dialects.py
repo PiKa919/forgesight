@@ -236,3 +236,129 @@ def test_a_question_mark_inside_a_literal_is_not_rewritten():
     assert tx("SELECT ? AS v") == "SELECT %s AS v"
     # an escaped quote inside a literal must not end the literal early
     assert tx("SELECT 'it''s ok?' , ?") == "SELECT 'it''s ok?' , %s"
+
+def test_macos_appledouble_sidecars_are_ignored(tmp_path, monkeypatch):
+    """A `._foo.sql` sidecar must not be treated as a migration.
+
+    macOS writes AppleDouble sidecars on any non-HFS filesystem -- a Docker bind
+    mount, a network share, an extracted tar. They match `*.sql`, sort before the
+    real migration, and are binary, so an unfiltered glob made the API fail to
+    start with a UnicodeDecodeError raised from inside migrate().
+    """
+    import forgesight.db.migrate as mig
+
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("SELECT 1;")
+    (d / "._0001_init.sql").write_bytes(b"\x00\x05\x16\x07\xa3\x01\x00\x00binary")
+    (d / ".DS_Store").write_bytes(b"\x00binary")
+
+    monkeypatch.setattr(mig, "MIGRATIONS_DIR", d)
+    names = [p.name for p in mig._migration_files()]
+    assert names == ["0001_init.sql"], names
+
+
+def test_a_misnamed_migration_fails_loudly(tmp_path, monkeypatch):
+    """A migration that is neither hidden nor numbered is a typo, not a skip.
+
+    Silently ignoring it would leave the schema half-applied, which is worse than
+    refusing to start.
+    """
+    import forgesight.db.migrate as mig
+
+    d = tmp_path / "migrations"
+    d.mkdir()
+    (d / "0001_init.sql").write_text("SELECT 1;")
+    (d / "add_column.sql").write_text("SELECT 1;")
+
+    monkeypatch.setattr(mig, "MIGRATIONS_DIR", d)
+    with pytest.raises(ValueError, match="numbered migration"):
+        mig._migration_files()
+
+
+def test_api_routes_are_not_shadowed_by_the_spa_catch_all(stack, monkeypatch):
+    """`/healthz` and `/v1/system/info` must answer JSON, not index.html.
+
+    `_mount_web` registers a catch-all `/{path:path}`, and Starlette matches in
+    registration order. When the SPA was mounted before these two, the catch-all
+    won and they returned index.html -- with HTTP 200, so a load balancer health
+    check would report the container healthy while handing back HTML instead of
+    JSON. Nothing local noticed because 200 is 200.
+
+    Asserted two ways: on the real response body, and on route order, so a future
+    move of _mount_web cannot silently reintroduce the shadowing.
+    """
+    client, _pool, _repo, _ws = stack
+
+    for path in ("/healthz", "/v1/system/info"):
+        r = client.get(path)
+        assert r.status_code == 200, (path, r.status_code)
+        assert r.headers["content-type"].startswith("application/json"), (
+            f"{path} returned {r.headers['content-type']}, not JSON"
+        )
+        assert r.json(), f"{path} returned no JSON body"
+        assert "<!doctype html>" not in r.text, f"{path} returned the SPA shell"
+
+    order = [
+        getattr(r, "path", None)
+        for r in client.app.routes
+    ]
+    if "/{path:path}" not in order:
+        # No web build, so no catch-all exists and there is nothing to shadow.
+        # The JSON assertions above still ran, and are the part that matters.
+        return
+    catch_all = order.index("/{path:path}")
+    for path in ("/healthz", "/v1/system/info"):
+        assert order.index(path) < catch_all, (
+            f"{path} is registered after the SPA catch-all and will be shadowed"
+        )
+
+
+def test_session_bootstrap_refuses_when_no_models_are_registered(tmp_path, monkeypatch):
+    """A session must not be minted for a workspace that cannot do anything.
+
+    With no model artifacts the registry is empty, so the seed creates a
+    workspace with no candidates and no active release -- every upload is then
+    refused, and the caller holds a valid token with no explanation. So the
+    request is refused instead, *before* anything is written, and the message
+    names the directories to populate.
+    """
+    from fastapi.testclient import TestClient
+
+    from forgesight.api.app import create_app
+    from forgesight.db.migrate import migrate
+    from forgesight.db.pool import get_pool
+    from forgesight.settings import configure, get_settings
+
+    missing = tmp_path / "absent"
+    s = get_settings().model_copy(update={
+        "data_dir": tmp_path / "data",
+        "database_url": f"sqlite:///{tmp_path / 'n.db'}",
+        "models_dir": missing / "models",
+        "artifacts_dir": missing / "artifacts",
+    })
+    s.ensure_dirs()
+    configure(s)
+
+    import forgesight.api.deps as deps
+
+    pool = get_pool(s.database_url)
+    migrate(pool, verbose=False)
+    deps.set_pool(pool)
+    client = TestClient(create_app())
+
+    r = client.post("/v1/sessions", json={"kind": "local"})
+    assert r.status_code == 503, r.text
+    assert "no model artifacts" in r.json()["detail"], r.text
+    # Names the directory so the fix is actionable, not just a refusal.
+    assert str(missing) in r.json()["detail"], r.text
+
+    # Nothing may be left behind: no orphan workspace, no orphan token.
+    with pool.connection() as conn:
+        assert conn.fetchone("SELECT COUNT(*) AS n FROM workspace")["n"] == 0
+        assert conn.fetchone("SELECT COUNT(*) AS n FROM api_token")["n"] == 0
+
+    pool.close()
+    from forgesight.settings import reset_settings
+
+    reset_settings()

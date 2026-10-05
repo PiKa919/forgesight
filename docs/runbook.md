@@ -15,6 +15,16 @@ make export       # ONNX export with recorded provenance
 make datasets     # synthetic evaluation sets
 ```
 
+**`make fetch` and `make export` are not optional.** They populate the model
+registry, and with an empty registry `POST /v1/sessions` returns **503** and
+names the directories it expected. That refusal is deliberate: an earlier version
+minted the session anyway and handed back a workspace with no candidates and no
+active release, where every upload is refused and the token explains nothing.
+
+The same applies to the containers: the `models` and `artifacts` volumes are
+bind-mounted from the host for exactly this reason. A fresh clone with empty
+volumes boots a healthy API that cannot process a page.
+
 Then four processes, in four terminals:
 
 ```bash

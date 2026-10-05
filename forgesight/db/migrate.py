@@ -8,6 +8,7 @@ any Python.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -44,6 +45,36 @@ def applied_migrations(conn) -> set[str]:
     return {r["name"] for r in rows}
 
 
+MIGRATION_RE = re.compile(r"^\d{4,}_[A-Za-z0-9_.-]+\.sql$")
+
+
+def _migration_files() -> list[Path]:
+    """The numbered migration files, in order, ignoring OS metadata.
+
+    `glob("*.sql")` alone also matches macOS AppleDouble sidecar files
+    (`._0001_init.sql`), which are created on any non-HFS filesystem -- a Docker
+    bind mount, a network share, an extracted tar. They sort *before* the real
+    migration, are binary, and made the API fail to start with a
+    UnicodeDecodeError from inside this function.
+
+    So: skip dotfiles, and require the numbered name. A file that is neither is
+    almost certainly a typo, and that is worth failing on rather than skipping --
+    silently ignoring a migration nobody noticed is the failure mode that leaves
+    a schema half-applied.
+    """
+    files = []
+    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        if path.name.startswith("."):
+            continue
+        if not MIGRATION_RE.match(path.name):
+            raise ValueError(
+                f"{path.name} is not a numbered migration "
+                f"(expected NNNN_name.sql); rename it or remove it"
+            )
+        files.append(path)
+    return files
+
+
 def migrate(pool: PoolLike, verbose: bool = True) -> list[str]:
     """Apply every migration not yet recorded. Returns the names applied."""
     dialect = pool.dialect
@@ -53,7 +84,7 @@ def migrate(pool: PoolLike, verbose: bool = True) -> list[str]:
         _ensure_bootstrap(conn, dialect)
         done = applied_migrations(conn)
 
-    files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    files = _migration_files()
     newly: list[str] = []
     for path in files:
         if path.name in done:

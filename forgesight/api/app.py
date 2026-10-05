@@ -53,8 +53,6 @@ def create_app() -> FastAPI:
     app.include_router(routes_releases.router)
     app.include_router(routes_reports.router)
 
-    _mount_web(app)
-
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict:
         return {"ok": True, "mode": s.mode, "dialect": get_pool_singleton().dialect.value}
@@ -80,6 +78,14 @@ def create_app() -> FastAPI:
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    # Registered last, on purpose. _mount_web adds a catch-all `/{path:path}`,
+    # and Starlette matches routes in registration order -- so mounting the SPA
+    # earlier silently shadowed /healthz and /v1/system/info, and they answered
+    # with index.html. It still returned HTTP 200, which is why nothing caught it:
+    # a load balancer would consider the container healthy while handing a health
+    # check HTML instead of JSON.
+    _mount_web(app)
 
     return app
 
