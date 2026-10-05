@@ -8,6 +8,9 @@ model weights.
 
 from __future__ import annotations
 
+import threading
+import time
+
 import numpy as np
 import pytest
 
@@ -405,3 +408,102 @@ def test_extreme_aspect_ratio_tiles_regardless_of_length():
     assert len(tiles) == 2
     assert tiles[0].tile_origin == (0, 0)
     assert tiles[1].tile_origin[0] > 0 or tiles[1].tile_origin[1] > 0
+
+
+# -- AT-5: cancellation during inference -------------------------------------
+
+
+def _cancel_soon(token: ThreadingCancelToken, delay: float) -> threading.Thread:
+    """Fire `token` from another thread after `delay` seconds."""
+
+    def go():
+        time.sleep(delay)
+        token.set()
+
+    t = threading.Thread(target=go, daemon=True)
+    t.start()
+    return t
+
+
+def _time_infer(model, batch, token):
+    t0 = time.perf_counter()
+    try:
+        model.infer(batch, token)
+        return time.perf_counter() - t0, None
+    except Exception as exc:
+        # Recorded and asserted by the caller, which distinguishes Cancelled from
+        # any other failure. A bare `except Exception` is right here precisely
+        # because the point is to measure and report whatever came out.
+        return time.perf_counter() - t0, exc
+
+
+@requires_weights
+@pytest.mark.model
+def test_cancel_running_torch_completes_then_drops_the_result():
+    """AT-5, torch half: the work is done, and the result is thrown away.
+
+    PyTorch eager cannot preempt a kernel mid-op, so cancellation is
+    cooperative. The forward pass runs to completion, and only then is the token
+    re-checked and `Cancelled` raised. Both runtimes raise the same exception;
+    what differs is that this one has already paid for the inference.
+
+    That is asserted as wall time against an uncancelled baseline rather than by
+    the exception type, because the exception alone cannot tell the two apart --
+    an implementation that silently ignored the token would raise nothing, and
+    one that checked only before the forward would return a result nobody wanted.
+    """
+    model = _load("egret-medium", "torch")
+    item = Preprocessor(make_profile("pil_bilinear"))(_pages(1)[0])[0]
+    batch = item.tensor[None]
+
+    baseline, baseline_exc = _time_infer(model, batch, NeverCancel())
+    assert baseline_exc is None, f"baseline inference failed: {baseline_exc!r}"
+
+    token = ThreadingCancelToken()
+    _cancel_soon(token, 0.05)
+    elapsed, exc = _time_infer(model, batch, token)
+
+    assert isinstance(exc, Cancelled), (
+        f"a cancelled torch run must raise Cancelled, got {exc!r}"
+    )
+    assert token.is_set()
+    # The forward pass was not skipped: it cost about as much as an uncancelled
+    # run. This is the behaviour the two runtimes differ on, and the reason a
+    # cancelled torch batch cannot be made to disappear.
+    assert elapsed > baseline * 0.80, (
+        f"cancelled torch run took {elapsed:.2f}s against a {baseline:.2f}s baseline; "
+        "eager torch should complete the forward pass and only then drop the result"
+    )
+
+
+@requires_weights
+@requires_onnx
+@pytest.mark.model
+def test_cancel_running_ort_terminates_in_flight():
+    """AT-5, ORT half: the run is actually stopped, not detected afterwards.
+
+    ONNX Runtime honours `RunOptions.terminate`, so the call returns sooner than
+    the inference would have taken. Without real termination the run finishes,
+    the token is noticed afterwards, and the operator still pays the full cost --
+    which is the entire reason the two runtimes behave differently here, and the
+    reason the torch test above asserts the opposite.
+    """
+    model = _load("egret-medium", "onnxruntime")
+    item = Preprocessor(make_profile("pil_bilinear"))(_pages(1)[0])[0]
+    batch = item.tensor[None]
+
+    baseline, baseline_exc = _time_infer(model, batch, NeverCancel())
+    assert baseline_exc is None, f"baseline inference failed: {baseline_exc!r}"
+
+    token = ThreadingCancelToken()
+    _cancel_soon(token, 0.05)
+    elapsed, exc = _time_infer(model, batch, token)
+
+    assert isinstance(exc, Cancelled), (
+        f"a terminated ORT run must raise Cancelled, got {exc!r} after {elapsed:.2f}s"
+    )
+    assert elapsed < baseline * 0.75, (
+        f"cancelled ORT run took {elapsed:.2f}s against a {baseline:.2f}s baseline; "
+        "that looks like the run completed and the token was noticed afterwards, "
+        "not an in-flight terminate"
+    )

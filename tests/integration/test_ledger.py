@@ -655,3 +655,55 @@ def test_queue_inclusive_latency_is_not_rounded_to_whole_seconds(env):
     # queue-inclusive figure.
     assert svc <= qi + 1.0, f"service {svc} > queue-inclusive {qi}"
     assert qi < 60_000
+
+
+def test_queue_latency_includes_the_wait_and_service_does_not(env):
+    """AT-20: hold a worker off the item, then claim it.
+
+    The existing timing test asserts only that service <= queue-inclusive. That
+    is true even if both numbers ignore the queue entirely, which is the failure
+    this is for: an implementation that stamped `claimed_at` at receipt time
+    would report a fast pipeline while users waited three seconds.
+
+    So the wait is made deliberately long, and asserted to appear in exactly one
+    of the two figures.
+    """
+    import time
+
+    from forgesight.api.repo import delta_ms
+
+    pool, ledger, ws = env
+    cat = _seed_catalog(pool, ws)
+    _enqueue(pool, ws, cat, 1)
+
+    # Stand in for a busy worker: the item sits queued.
+    time.sleep(1.2)
+
+    item = ledger.claim("torch", "w", n=1, lease_s=60)[0]
+    ledger.complete(item, PredictionIn(_dets()))
+
+    placeholder = "?" if pool.dialect is Dialect.SQLITE else "%s"
+    with pool.connection() as conn:
+        row = conn.fetchone(
+            "SELECT received_at, claimed_at, persisted_at FROM work_item "
+            f"WHERE id = {placeholder}",
+            (item.id,),
+        )
+
+    queued = delta_ms(row["received_at"], row["claimed_at"])
+    qi = delta_ms(row["received_at"], row["persisted_at"])
+    svc = delta_ms(row["claimed_at"], row["persisted_at"])
+
+    assert queued is not None and qi is not None and svc is not None
+    # The wait is in the queue-inclusive figure...
+    assert queued >= 1000, f"queue wait measured as {queued:.0f} ms"
+    assert qi >= 1000, f"queue-inclusive latency {qi:.0f} ms omitted the wait"
+    # ...and is absent from service, which starts at the claim.
+    assert svc < 1000, (
+        f"service time {svc:.0f} ms includes {queued:.0f} ms of queue wait; "
+        "the two figures are supposed to differ by exactly the wait"
+    )
+    # And the difference is the wait, not approximately the wait.
+    assert (qi - svc) == pytest.approx(queued, abs=50.0), (
+        f"qi-svc {qi - svc:.0f} ms does not equal the measured queue wait {queued:.0f} ms"
+    )

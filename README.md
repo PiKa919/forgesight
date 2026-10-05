@@ -184,6 +184,23 @@ candidate is actually *blocked* — a gate suite that stopped blocking bad
 candidates would be worse than one that never existed, because it would let them
 through silently.
 
+Every one of the design's 22 acceptance tests has at least one test. The five
+that took the longest to get right, because each asserts a property that a
+naive implementation would satisfy while being wrong:
+
+| | what a naive version does | what is asserted |
+|---|---|---|
+| `AT-20` | stamps `claimed_at` at receipt | a deliberate 1.2 s queue wait appears in queue-inclusive latency and is absent from service, and the difference equals the wait |
+| `AT-5` | raises `Cancelled` for both runtimes | ORT returns in 4% of the baseline (real `RunOptions.terminate`); torch returns in 103% — it finished the forward pass and dropped the result |
+| `AT-6` | admits the requested batch | a budget sized for two items admits exactly two, with the safety margin visibly reducing it |
+| `AT-7` | clamps an oversized batch to 1 | `admit()` returns 0 to *refuse*, and the worker survives to run the next item |
+| `AT-21` | measures on battery anyway | refusal carries an actionable reason, the override still works, and a mismatched library version refuses the comparison |
+
+`AT-5` is the one worth reading. Both runtimes raise the same exception, so the
+exception alone cannot tell them apart — the difference is only visible as wall
+time, which is why the pair of tests is written against a measured baseline
+rather than against the return value.
+
 ## Layout
 
 ```

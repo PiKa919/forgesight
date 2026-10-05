@@ -1,0 +1,158 @@
+name: ci
+
+# Two jobs, because the interesting property of this suite is that it must pass
+# in two quite different environments:
+#
+#   logic   no model weights, no database. This is what a fresh clone gets, and
+#           it is the one that used to fail: 17 tests needed the 250 MB of model
+#           downloads to run, so a published repo failed on arrival while the
+#           author's own checkout was green. Publishing that is how it was found.
+#   full    weights and PostgreSQL. Slower, and needs a service container.
+#
+# The first job is the fast gate and needs nothing, so it always runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  logic:
+    name: logic (no weights, no database)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # ort + export only. torch is not installed: nothing in this job loads a
+      # model, and installing 2 GB of it to prove the point would be its own
+      # kind of dishonesty.
+      - name: Install
+        run: uv sync --extra ort --extra export
+
+      - name: Lint
+        run: uv run ruff check forgesight tests scripts
+
+      - name: Test
+        run: uv run pytest -q
+
+      - name: Assert nothing was silently skipped that should not be
+        run: |
+          # The model tests are *supposed* to skip here. What must not happen is
+          # a test disappearing from the run for any other reason, so the count
+          # is pinned: a change that skips tests to make CI green is visible as
+          # a failure rather than as a quiet improvement.
+          n=$(uv run pytest -q --collect-only 2>/dev/null | tail -1 |
+              grep -oE '[0-9]+' | head -1)
+          echo "collected $n tests"
+          test "${n:-0}" -ge 140 || {
+            echo "test count dropped below 140; investigate before merging"; exit 1; }
+
+  full:
+    name: full (weights + PostgreSQL 17)
+    runs-on: ubuntu-latest
+    needs: logic
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: forgesight
+          POSTGRES_PASSWORD: forgesight
+          POSTGRES_DB: forgesight
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --extra torch --extra ort --extra export
+
+      # The weights are pinned by sha256 in models.lock.json and are not
+      # committed. Verified on download rather than trusted.
+      - name: Fetch pinned weights
+        run: uv run python scripts/fetch_models.py
+
+      - name: Export ONNX
+        run: uv run python scripts/export_models.py
+
+      - name: Test
+        env:
+          FORGESIGHT_TEST_PG: postgresql://forgesight:forgesight@127.0.0.1:5432/forgesight
+        run: uv run pytest -q
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install and build
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # The API serves the built bundle from the same origin, so a web build
+      # that is never exercised end to end is exactly how the Dockerfile shipped
+      # without one and served a 404 for every page.
+      - name: The build is a real bundle, not an empty shell
+        run: |
+          test -f web/dist/index.html || { echo "no index.html"; exit 1; }
+          find web/dist/assets -name '*.js' -size +1k | head -1
+
+  container:
+    name: container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Proves the Dockerfile is real. An image that builds successfully while
+      # containing no dependencies shipped once, because a `|| true` was scoped
+      # to the wrong command. This job builds both targets and imports from them.
+      - name: Build the ONNX Runtime image (must not contain torch)
+        run: |
+          docker build --build-arg INSTALL_EXTRAS=ort \
+            -f deploy/Dockerfile -t forgesight-ort .
+          docker run --rm forgesight-ort python -c "
+          import importlib.util as u
+          assert u.find_spec('torch') is None, 'torch leaked into the ORT image'
+          assert u.find_spec('onnxruntime') is not None, 'onnxruntime missing'
+          import forgesight.api.app
+          from forgesight.settings import REPO_ROOT
+          assert (REPO_ROOT / 'web' / 'dist' / 'index.html').exists(), 'no web build'
+          print('ORT image OK: no torch, onnxruntime present, web bundle present')
+          "
+
+      - name: Build the torch image (CPU-only wheels)
+        run: |
+          docker build --build-arg INSTALL_EXTRAS=torch \
+            -f deploy/Dockerfile -t forgesight-torch .
+          docker run --rm forgesight-torch python -c "
+          import torch
+          assert torch.version.cuda is None, f'expected a CPU build, got {torch.version.cuda}'
+          assert '+cpu' in torch.__version__, torch.__version__
+          print('torch image OK:', torch.__version__)
+          "
