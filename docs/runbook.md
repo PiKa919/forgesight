@@ -156,6 +156,64 @@ Then check, in this order:
 
 ## 5. Operations
 
+### The remote PostgreSQL
+
+The dual-dialect suite needs a real PostgreSQL. If the host you have is
+**ephemeral** — a Lightning AI Studio, a CI sandbox, anything that discards state
+when it stops — read this first.
+
+`scripts/remote_pg.sh` is the supported way to provision it, and it is
+idempotent: run it again after a restart instead of rebuilding by hand.
+
+```bash
+export SSH_REMOTE='<user>@<host>'
+export PG_DIR='/persistent/path/on/that/host'
+scripts/remote_pg.sh up       # create or start, then wait for readiness
+scripts/remote_pg.sh status   # running? how many tables?
+scripts/remote_pg.sh down     # remove the container; PGDATA is kept
+```
+
+Then open the tunnel and point the suite at it:
+
+```bash
+ssh -f -N -L 55432:127.0.0.1:5432 "$SSH_REMOTE"
+export FORGESIGHT_TEST_PG='postgresql://forgesight:forgesight@127.0.0.1:55432/forgesight'
+make test-all
+```
+
+**`PG_DIR` is the part that matters.** Two defaults are wrong on an ephemeral
+host, and both fail silently:
+
+- **Data in the container's writable layer.** Recreating the container discards
+  the database.
+- **A named Docker volume.** A named volume lives under `/var/lib/docker`, which
+  is *not* persistent on these hosts. It survives `docker rm`, so it looks
+  correct right up until the machine restarts.
+
+The script bind-mounts `PG_DIR` into the container, so the database outlives the
+container. It also passes `--restart unless-stopped`, which covers an in-place
+restart but not a full reprovision — that is what re-running the script is for.
+
+On a Lightning AI Studio the persistent location is the Studio folder, visible as
+a `lightning` FUSE mount:
+
+```bash
+$ mount | grep ' type lightning '
+lightning on /home/zeus type lightning (rw,relatime)
+lightning on /teamspace/studios/this_studio type lightning (rw,relatime)
+```
+
+`/teamspace/studios/this_studio` is the one to use; `this_studio` is Lightning's
+own stable alias for it, so it does not change with the account. `/home/zeus` is
+also persistent but is the shell's home, so it mixes with dotfiles.
+
+`/teamspace/uploads` is mounted **read-only** — do not try to put PGDATA there.
+
+One wrinkle worth knowing: the Studio folder does not preserve unix ownership, so
+PGDATA's `postgres:postgres 700` reads back with an unresolved group. The
+container still writes correctly, so this is cosmetic, but `ls` from the login
+account will show `UNKNOWN` where a group name would normally appear.
+
 ### Migrations
 
 Plain numbered SQL, applied in order inside a transaction, recorded in

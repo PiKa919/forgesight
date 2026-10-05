@@ -159,6 +159,24 @@ make test         # everything
 ledger test runs against both backends**, because a fencing bug that only appears
 on the backend the fast suite uses is still a bug.
 
+`scripts/remote_pg.sh` provisions a remote PostgreSQL for this and is
+idempotent, so it is the intended way to set one up:
+
+```bash
+export SSH_REMOTE='<user>@<host>'
+export PG_DIR='/persistent/path/on/that/host'
+scripts/remote_pg.sh up
+export FORGESIGHT_TEST_PG='postgresql://forgesight:forgesight@127.0.0.1:55432/forgesight'
+make test-all
+```
+
+**Set `PG_DIR` to somewhere that survives.** A container created by hand, with
+its data in the container's writable layer or a named Docker volume, is discarded
+when an ephemeral host restarts — `/var/lib/docker` included. The script
+bind-mounts `PG_DIR` into the container precisely so that recreating the
+container does not also discard the database. See
+[docs/runbook.md](docs/runbook.md) for the host this was developed against.
+
 The suite is written against final state, not HTTP 200. `AT-3` asserts that a
 zombie's `complete()`, `fail()` and `mark_cancelled()` all return `False` and
 that no second prediction exists. `AT-13` asserts the deliberately-degraded 320px

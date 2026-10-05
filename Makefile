@@ -10,7 +10,7 @@ export HF_HOME ?= $(CURDIR)/.hf_home
 .DEFAULT_GOAL := help
 .PHONY: help install fetch export datasets api worker-torch worker-ort reaper web \
         test test-unit test-model test-all lint typecheck bench report demo up down \
-        clean distclean
+        clean distclean pg-up pg-down pg-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -56,6 +56,20 @@ test-model: ## Tests that load model weights
 
 test-all: ## Everything, both database dialects when FORGESIGHT_TEST_PG is set
 	$(PY) pytest -q
+
+# Provisioning the remote PostgreSQL is a script, not a recipe, because getting
+# it wrong is silent: a container that keeps its data in a named Docker volume
+# survives `docker rm` and loses everything on the next host restart, so the
+# mistake only shows up much later. PG_DIR must be a path that outlives the
+# container -- see docs/runbook.md.
+pg-up: ## Provision the remote PostgreSQL (needs SSH_REMOTE and PG_DIR)
+	./scripts/remote_pg.sh up
+
+pg-down: ## Remove the remote PostgreSQL container, keeping PGDATA
+	./scripts/remote_pg.sh down
+
+pg-status: ## Report the remote PostgreSQL state
+	./scripts/remote_pg.sh status
 
 lint: ## Ruff
 	$(PY) ruff check forgesight tests scripts
