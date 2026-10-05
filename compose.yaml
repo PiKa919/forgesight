@@ -1,0 +1,137 @@
+# ForgeSight compose stack.
+#
+# The design's separation of processes is the point of this file: one API that
+# runs no inference, one worker process per runtime pool, and a reaper. Torch and
+# ONNX Runtime never share a heap, so each pool's peak RSS is attributable to one
+# runtime rather than to two allocators mixed together.
+#
+# Podman, not Docker: this project was developed on a machine with Podman. The
+# syntax is the same. Note the important caveat about the VM in
+# docs/runbook.md: a Podman machine is a Linux VM, so benchmarks taken inside
+# these containers describe that VM and not the host. They are never comparable
+# with a native run.
+#
+# Start:  podman compose up -d --build
+# Logs:   podman compose logs -f api
+# Stop:   podman compose down
+
+name: forgesight
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile
+  env_file:
+    - .env
+  environment:
+    FORGESIGHT_DATABASE_URL: postgresql://forgesight:${POSTGRES_PASSWORD:-forgesight}@postgres:5432/forgesight
+    FORGESIGHT_OBJECT_STORE: s3
+    FORGESIGHT_S3_ENDPOINT: http://seaweedfs:8333
+    FORGESIGHT_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-forgesight}
+    FORGESIGHT_S3_SECRET_KEY: ${S3_SECRET_KEY:-forgesight-secret}
+    FORGESIGHT_S3_BUCKET: forgesight
+    FORGESIGHT_TOKEN_PEPPER: ${FORGESIGHT_TOKEN_PEPPER:?set a long random value in .env}
+  volumes:
+    - models:/models:ro
+    - artifacts:/artifacts:ro
+    - data:/data
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_USER: forgesight
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forgesight}
+      POSTGRES_DB: forgesight
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The API and workers must not start against a database that is not ready;
+      # migrations would run against a half-booted server and fail confusingly.
+      test: ["CMD-SHELL", "pg_isready -U forgesight -d forgesight"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  seaweedfs:
+    # Apache-2.0. Chosen over MinIO because the community edition of that was
+    # reported archived and unpatched; verify the image and licence before a real
+    # deployment (design §2.3).
+    image: docker.io/chrislusf/seaweedfs:3.80
+    command: server -dir=/data -s3 -s3.port=8333
+    volumes:
+      - seaweed:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9333/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["python", "-m", "forgesight.db.migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+
+  api:
+    <<: *app
+    command:
+      - "uvicorn"
+      - "forgesight.api.app:app"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+    ports:
+      - "${FORGESIGHT_BIND:-127.0.0.1}:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # The ORT worker image deliberately has no torch in it. If torch is present the
+  # separation of runtimes is unverifiable, because the peak RSS of the ORT pool
+  # could then include torch's allocator (design §7).
+  worker-torch:
+    <<: *app
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        INSTALL_EXTRAS: torch
+    command: ["python", "-m", "forgesight.worker", "--pool", "torch"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker-ort:
+    <<: *app
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        INSTALL_EXTRAS: ort
+    command: ["python", "-m", "forgesight.worker", "--pool", "onnxruntime"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  reaper:
+    <<: *app
+    command: ["python", "-m", "forgesight.ledger"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  seaweed:
+  models:
+  artifacts:
+  data:

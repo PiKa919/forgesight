@@ -111,10 +111,16 @@ def test_upload_to_prediction_end_to_end(stack, session):
         assert it["state"] == "succeeded"
         assert it["timings"]["infer_ms"] and it["timings"]["infer_ms"] > 0
         assert it["timings"]["preprocess_ms"] is not None
-        # The image endpoint is authorised and redirects.
+        # The image endpoint is authorised. On S3 it redirects to a presigned
+        # URL; the filesystem store streams the bytes directly, because a
+        # file:// URL is not something a browser will load. Both are correct, so
+        # assert the contract -- authorised, and either a redirect or a PNG --
+        # rather than one backend's specific status code.
         img = client.get(f"/v1/items/{it['id']}/image", headers=headers,
                          follow_redirects=False)
-        assert img.status_code == 302, img.status_code
+        assert img.status_code in (200, 302), img.status_code
+        if img.status_code == 200:
+            assert img.headers["content-type"] == "image/png"
 
     with pool.connection() as conn:
         n = len(conn.fetchall(

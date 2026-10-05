@@ -126,6 +126,45 @@ def _bind(sql: str, params: Any) -> Any:
     return tuple(params)
 
 
+def to_postgres_placeholders(sql: str) -> str:
+    """Rewrite portable ``?`` placeholders to psycopg's ``%s``.
+
+    The route layer was originally written with ``?`` because SQLite is the
+    default development backend, and nothing exercised those endpoints on
+    PostgreSQL -- the deployment engine -- so the mismatch (a query with 0
+    placeholders but N parameters) only surfaced under a real deployment. This
+    runs once, at the pool boundary, so every statement is dialect-correct no
+    matter how it was written.
+
+    Only ``?`` outside a single-quoted string literal is rewritten, so a literal
+    containing ``?`` is left alone. The codebase uses neither the PostgreSQL
+    jsonb ``?`` operator nor ``?`` inside literals; the assertion that keeps
+    that true lives in tests/integration/test_api_dialects.py.
+    """
+    if "?" not in sql:
+        return sql
+    out: list[str] = []
+    in_str = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            # '' inside a literal is an escaped quote, not a terminator.
+            if in_str and i + 1 < n and sql[i + 1] == "'":
+                out.append("''")
+                i += 2
+                continue
+            in_str = not in_str
+            out.append(ch)
+        elif ch == "?" and not in_str:
+            out.append("%s")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 class _Row(dict):
     """dict with attribute access, so ledger code reads naturally on both."""
 
@@ -325,16 +364,21 @@ class _PsycopgConn:
         self._conn = conn
 
     def execute(self, sql: str, params: Any = ()) -> Any:
-        return self._conn.execute(sql, _bind(sql, params))
+        return self._conn.execute(to_postgres_placeholders(sql), _bind(sql, params))
 
     def executescript(self, script: str) -> None:
         self._conn.execute(script)
 
     def fetchall(self, sql: str, params: Any = ()) -> list[dict]:
-        return [dict(r) for r in self._conn.execute(sql, _bind(sql, params)).fetchall()]
+        out = self._conn.execute(
+            to_postgres_placeholders(sql), _bind(sql, params)
+        ).fetchall()
+        return [dict(r) for r in out]
 
     def fetchone(self, sql: str, params: Any = ()) -> dict | None:
-        row = self._conn.execute(sql, _bind(sql, params)).fetchone()
+        row = self._conn.execute(
+            to_postgres_placeholders(sql), _bind(sql, params)
+        ).fetchone()
         return dict(row) if row is not None else None
 
     def commit(self) -> None:

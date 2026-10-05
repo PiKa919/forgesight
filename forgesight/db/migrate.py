@@ -8,6 +8,7 @@ any Python.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from forgesight.db.pool import Dialect, PoolLike, ph, translate_ddl
@@ -99,3 +100,23 @@ def reset(pool: PoolLike) -> None:
                 continue
             conn.execute(f'DROP TABLE IF EXISTS "{name}" CASCADE')
     migrate(pool, verbose=False)
+
+
+def main() -> int:
+    """`python -m forgesight.db.migrate`, the compose entrypoint.
+
+    Lives here rather than in deploy/ so the compose stack needs no extra COPY:
+    this module is already inside the package the image copies.
+    """
+    from forgesight.db.pool import get_pool
+    from forgesight.settings import get_settings
+
+    s = get_settings()
+    s.ensure_dirs()
+    applied = migrate(get_pool(s.database_url), verbose=True)
+    print(f"migrations applied: {len(applied)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
