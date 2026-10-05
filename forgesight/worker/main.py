@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
+import psutil
 
 from forgesight.db.pool import PoolLike
 from forgesight.ledger.claims import ClaimedItem, Ledger, PredictionIn, record_timings
@@ -375,6 +376,19 @@ class Worker:
                             None, self.run_batch, chunk, cancel
                         )
                         self.persist(outcomes)
+                        # Design §13.2: memory misprediction ends in a graceful
+                        # recycle. Checked between micro-batches rather than
+                        # between claims so a single oversized batch cannot run
+                        # the process into the OOM killer first. The current batch
+                        # has already been persisted, so nothing is lost.
+                        if self._over_hard_cap():
+                            log.warning(
+                                "recycling: RSS is over the hard cap after %d batches",
+                                self.stats["batches"],
+                            )
+                            self.stats["recycles"] += 1
+                            self.request_stop()
+                            return
 
                 self.held = [i for i in self.held if i not in items]
                 if once:
@@ -400,6 +414,23 @@ class Worker:
 
     def request_stop(self) -> None:
         self.stopping.set()
+
+    def _over_hard_cap(self) -> bool:
+        """Measured RSS against the hard cap, or False when it cannot be read.
+
+        Never recycles on a failed measurement. Exiting a healthy process
+        because psutil could not read /proc trades a running worker for a
+        measurement problem, which is the wrong direction.
+        """
+        from forgesight.worker.memprobe import hard_cap_bytes, over_hard_cap
+
+        try:
+            peak = psutil.Process().memory_info().rss
+        except Exception:
+            log.warning("could not read RSS; not recycling")
+            return False
+        cap = hard_cap_bytes(self.s.rss_hard_cap_fraction)
+        return over_hard_cap(peak, cap)
 
     def status(self) -> dict:
         return {

@@ -130,6 +130,41 @@ def prefetch_bytes(items: list) -> int:
     return total
 
 
+def host_total_bytes() -> int:
+    """Total host memory, or 0 when it cannot be read.
+
+    Zero on failure rather than an exception: every caller treats an unknown cap
+    as "no opinion", so a missing reading must not become a hard failure.
+    """
+    try:
+        return int(psutil.virtual_memory().total)
+    except Exception:
+        return 0
+
+
+def hard_cap_bytes(host_fraction: float = 0.85) -> int:
+    """The ceiling a worker refuses to keep running past.
+
+    Deliberately a fraction of *total* host memory rather than of
+    `worker_mem_budget`. Admission's budget is a soft target and is known to be
+    unreliable on this host -- the calibration fit produced a negative intercept
+    and was marked invalid (ADR 0004) -- so the backstop is anchored to something
+    that cannot drift: the machine.
+    """
+    return int(host_total_bytes() * host_fraction)
+
+
+def over_hard_cap(peak_rss: int, cap_bytes: int) -> bool:
+    """True when a worker should stop after finishing what it holds.
+
+    Kept separate from `Admission.admit` because the two answer different
+    questions. Admission is a prediction about work not yet run and can be wrong
+    in either direction; this is a measurement of what the process already did,
+    so it belongs as a fallback rather than as the primary control.
+    """
+    return cap_bytes > 0 and peak_rss > cap_bytes
+
+
 @dataclass(slots=True)
 class Admission:
     """Picks the largest batch that fits, or refuses the work."""

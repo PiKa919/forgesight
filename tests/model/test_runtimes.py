@@ -440,40 +440,49 @@ def _time_infer(model, batch, token):
 @requires_weights
 @pytest.mark.model
 def test_cancel_running_torch_completes_then_drops_the_result():
-    """AT-5, torch half: the work is done, and the result is thrown away.
+    """AT-5, torch half: the forward pass runs, and its output is discarded.
 
-    PyTorch eager cannot preempt a kernel mid-op, so cancellation is
-    cooperative. The forward pass runs to completion, and only then is the token
-    re-checked and `Cancelled` raised. Both runtimes raise the same exception;
-    what differs is that this one has already paid for the inference.
+    PyTorch eager cannot preempt a kernel mid-op, so cancellation is cooperative
+    -- `infer` checks the token before the forward, runs it to completion, then
+    checks again and raises `Cancelled`.
 
-    That is asserted as wall time against an uncancelled baseline rather than by
-    the exception type, because the exception alone cannot tell the two apart --
-    an implementation that silently ignored the token would raise nothing, and
-    one that checked only before the forward would return a result nobody wanted.
+    An earlier version of this test asserted that by *timing*: the cancelled run
+    should take about as long as an uncancelled one. That was flaky, failing two
+    runs in three, and the fault was in the test rather than the code. Both
+    timings measure the same completed forward pass, so the only thing separating
+    them is measurement noise -- and the baseline was measured cold while the
+    cancelled run came second and warm, so a legitimately faster run looked like
+    preemption. "No speedup" and "noise" are the same signal at this margin.
+
+    So this asserts the mechanism instead: the model's forward really was called,
+    and `Cancelled` still came out. That is deterministic, and it is the thing
+    the asymmetry rests on -- ORT raises the same exception without the forward
+    ever finishing, which the ORT test below demonstrates by timing, where the
+    margin is roughly 25x and the noise cannot reach it.
     """
     model = _load("egret-medium", "torch")
     item = Preprocessor(make_profile("pil_bilinear"))(_pages(1)[0])[0]
-    batch = item.tensor[None]
 
-    baseline, baseline_exc = _time_infer(model, batch, NeverCancel())
-    assert baseline_exc is None, f"baseline inference failed: {baseline_exc!r}"
+    calls = []
+    inner = model.model.forward
+
+    def spy(*a, **k):
+        calls.append(1)
+        return inner(*a, **k)
+
+    model.model.forward = spy
 
     token = ThreadingCancelToken()
     _cancel_soon(token, 0.05)
-    elapsed, exc = _time_infer(model, batch, token)
 
-    assert isinstance(exc, Cancelled), (
-        f"a cancelled torch run must raise Cancelled, got {exc!r}"
+    with pytest.raises(Cancelled):
+        model.infer(item.tensor[None], token)
+
+    assert calls, (
+        "the forward pass never ran, so this was not 'completes then drops' -- "
+        "either the token was honoured before the work, or it was never started"
     )
     assert token.is_set()
-    # The forward pass was not skipped: it cost about as much as an uncancelled
-    # run. This is the behaviour the two runtimes differ on, and the reason a
-    # cancelled torch batch cannot be made to disappear.
-    assert elapsed > baseline * 0.80, (
-        f"cancelled torch run took {elapsed:.2f}s against a {baseline:.2f}s baseline; "
-        "eager torch should complete the forward pass and only then drop the result"
-    )
 
 
 @requires_weights
@@ -485,13 +494,21 @@ def test_cancel_running_ort_terminates_in_flight():
     ONNX Runtime honours `RunOptions.terminate`, so the call returns sooner than
     the inference would have taken. Without real termination the run finishes,
     the token is noticed afterwards, and the operator still pays the full cost --
-    which is the entire reason the two runtimes behave differently here, and the
-    reason the torch test above asserts the opposite.
+    which is the entire reason the two runtimes behave differently here.
+
+    Measured rather than asserted structurally, because there is no seam to
+    inspect: the measurement is the only evidence that the run stopped. It is
+    safe to measure because the margin is about 25x (a terminated run returns in
+    roughly 4% of an uncancelled one), nowhere near where timing noise lives.
     """
     model = _load("egret-medium", "onnxruntime")
     item = Preprocessor(make_profile("pil_bilinear"))(_pages(1)[0])[0]
     batch = item.tensor[None]
 
+    # Warm up first. The first inference pays for session setup and first-touch
+    # faults; measuring that as the baseline would hand the cancelled run an
+    # unfair advantage and make the assertion pass for the wrong reason.
+    _time_infer(model, batch, NeverCancel())
     baseline, baseline_exc = _time_infer(model, batch, NeverCancel())
     assert baseline_exc is None, f"baseline inference failed: {baseline_exc!r}"
 

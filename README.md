@@ -164,18 +164,19 @@ idempotent, so it is the intended way to set one up:
 
 ```bash
 export SSH_REMOTE='<user>@<host>'
-export PG_DIR='/persistent/path/on/that/host'
 scripts/remote_pg.sh up
+ssh -f -N -L 55432:127.0.0.1:5432 "$SSH_REMOTE"
 export FORGESIGHT_TEST_PG='postgresql://forgesight:forgesight@127.0.0.1:55432/forgesight'
 make test-all
 ```
 
-**Set `PG_DIR` to somewhere that survives.** A container created by hand, with
-its data in the container's writable layer or a named Docker volume, is discarded
-when an ephemeral host restarts — `/var/lib/docker` included. The script
-bind-mounts `PG_DIR` into the container precisely so that recreating the
-container does not also discard the database. See
-[docs/runbook.md](docs/runbook.md) for the host this was developed against.
+`PG_DIR` is unset by default and should stay that way on an ephemeral host: the
+database is recreated on every start, which costs nothing because the suite drops
+and recreates the schema itself. Persisting PGDATA looks like the obvious win and
+is not — on a FUSE-backed persistent folder PostgreSQL comes back with its tables
+intact and then refuses to start. See
+[docs/runbook.md](docs/runbook.md) for the host this was developed against and
+the exact failure.
 
 The suite is written against final state, not HTTP 200. `AT-3` asserts that a
 zombie's `complete()`, `fail()` and `mark_cancelled()` all return `False` and

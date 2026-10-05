@@ -167,10 +167,9 @@ idempotent: run it again after a restart instead of rebuilding by hand.
 
 ```bash
 export SSH_REMOTE='<user>@<host>'
-export PG_DIR='/persistent/path/on/that/host'
 scripts/remote_pg.sh up       # create or start, then wait for readiness
 scripts/remote_pg.sh status   # running? how many tables?
-scripts/remote_pg.sh down     # remove the container; PGDATA is kept
+scripts/remote_pg.sh down     # remove the container
 ```
 
 Then open the tunnel and point the suite at it:
@@ -181,21 +180,17 @@ export FORGESIGHT_TEST_PG='postgresql://forgesight:forgesight@127.0.0.1:55432/fo
 make test-all
 ```
 
-**`PG_DIR` is the part that matters.** Two defaults are wrong on an ephemeral
-host, and both fail silently:
+Running the suite *on* the remote host needs no tunnel — use
+`postgresql://forgesight:forgesight@127.0.0.1:5432/forgesight` there.
 
-- **Data in the container's writable layer.** Recreating the container discards
-  the database.
-- **A named Docker volume.** A named volume lives under `/var/lib/docker`, which
-  is *not* persistent on these hosts. It survives `docker rm`, so it looks
-  correct right up until the machine restarts.
+### Do not put PGDATA on a FUSE mount
 
-The script bind-mounts `PG_DIR` into the container, so the database outlives the
-container. It also passes `--restart unless-stopped`, which covers an in-place
-restart but not a full reprovision — that is what re-running the script is for.
+`PG_DIR` is **unset by default**, and that is deliberate. PGDATA is
+container-local and recreated on every start.
 
-On a Lightning AI Studio the persistent location is the Studio folder, visible as
-a `lightning` FUSE mount:
+The obvious improvement — bind-mounting PGDATA onto the only durable path — does
+not work on a Lightning AI Studio, and it fails in a way that looks like it
+worked. The persistent location is the Studio folder:
 
 ```bash
 $ mount | grep ' type lightning '
@@ -204,15 +199,29 @@ lightning on /teamspace/studios/this_studio type lightning (rw,relatime)
 ```
 
 `/teamspace/studios/this_studio` is the one to use; `this_studio` is Lightning's
-own stable alias for it, so it does not change with the account. `/home/zeus` is
-also persistent but is the shell's home, so it mixes with dotfiles.
+own stable alias, so it does not change with the account. It is a **network FUSE
+mount**, and PostgreSQL needs more from a filesystem than durable file contents.
+With PGDATA there, the container came back after a host restart looking healthy
+— the tables were still on disk — and then refused to start:
 
-`/teamspace/uploads` is mounted **read-only** — do not try to put PGDATA there.
+```
+FATAL:  could not open directory "pg_notify": No such file or directory
+```
 
-One wrinkle worth knowing: the Studio folder does not preserve unix ownership, so
-PGDATA's `postgres:postgres 700` reads back with an unresolved group. The
-container still writes correctly, so this is cosmetic, but `ls` from the login
-account will show `UNKNOWN` where a group name would normally appear.
+An earlier check of this setup proved a table survived `docker rm -f` and
+concluded persistence worked. That tested *file* durability; the property that
+matters is whether PostgreSQL can *start* from the directory. The two are
+different, and only the second one caught this.
+
+Set `PG_DIR` only on a real POSIX filesystem — a local ext4/xfs volume — never on
+FUSE or a network mount.
+
+Recreating the database costs nothing here: the test suite drops and recreates
+the schema in a fixture, so there is no state worth keeping. The script also
+passes `--restart unless-stopped` for an in-place restart, and removes a stopped
+container left by a previous host before recreating it.
+
+`/teamspace/uploads` is mounted **read-only** — not usable for anything.
 
 ### Migrations
 
@@ -270,8 +279,27 @@ tail -f logs/worker-torch.log     # look for "lease lost"
 podman compose restart worker-torch
 ```
 
-A worker also recycles itself if its RSS exceeds the hard cap: it finishes the
-current batch, releases its leases and exits for the supervisor to restart.
+A worker also recycles itself if its RSS exceeds the hard cap. The cap is
+`rss_hard_cap_fraction` (default 0.85) of **total** host memory, checked
+between micro-batches. On crossing it the worker finishes the batch in hand,
+persists it, stops claiming, and exits for the supervisor to restart — so the
+replacement picks the work up immediately rather than waiting out a lease.
+
+The cap is deliberately *not* derived from `worker_mem_budget`. That number is
+admission's soft target and it is a prediction about work not yet run; on this
+host the calibration fit produced a negative intercept and was marked invalid
+([ADR 0004](adr/0004-memory-model-did-not-reproduce.md)). The hard cap is a
+measurement of what the process already did, anchored to the machine, and it is
+only ever a fallback. If RSS cannot be read at all the worker does **not**
+recycle — exiting a healthy process over a failed measurement is the wrong
+trade.
+
+Recycles are counted in the worker's own `stats.recycles`, and are not yet
+surfaced through the API — `GET /v1/system/status` reports queue depth, the
+memory budget, the safety margin and `admission_mispredictions` (read from
+stored evaluation records), but not live worker counters. A recycle therefore
+shows up in `logs/worker-<pool>.log` as `recycling: RSS is over the hard cap`.
+Wiring `stats` through is the obvious next step if this ever runs unattended.
 
 ## 6. Troubleshooting
 

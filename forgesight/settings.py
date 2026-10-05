@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     rss_sample_ms: int = 5
     rss_misprediction_factor: float = 1.10
     model_cache_size: int = 2
+    # Hard ceiling on a worker's own RSS, as a fraction of total host memory.
+    # Independent of worker_mem_budget: that is admission's soft target and can be
+    # wrong (the calibration did not reproduce -- ADR 0004), whereas this is the
+    # last line of defence. Crossing it ends the worker's batch loop gracefully
+    # rather than waiting for the kernel to be OOM-killed, so leases are released
+    # and any queued work is picked up immediately by the replacement.
+    rss_hard_cap_fraction: float = 0.85
 
     # ---- sandbox / demo quotas (policy) ---------------------------------
     sandbox_ttl_hours: int = 24

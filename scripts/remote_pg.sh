@@ -4,20 +4,32 @@
 # WHY THIS SCRIPT EXISTS
 #
 # The remote host is a Lightning AI Studio. Everything outside one Studio folder
-# is discarded when the machine stops, which includes /var/lib/docker -- so a
-# container created by hand, with its data in the container's writable layer,
-# is gone on the next start. That is not a hypothesis: fs-pg was created exactly
-# that way and had vanished by the next session.
+# is discarded when the machine stops, /var/lib/docker included, so a container
+# created by hand is simply gone on the next start. That is not a hypothesis:
+# fs-pg was created exactly that way and had vanished by the next session.
 #
-# So two things have to be true, and neither is Docker's default:
+# So the container must be recreated from this script rather than from memory.
 #
-#   1. The container is recreated from this script, not from memory.
-#   2. PGDATA is a bind mount onto the persistent Studio folder. A named Docker
-#      volume lives under /var/lib/docker and would NOT survive.
+# WHY PGDATA IS *NOT* ON THE PERSISTENT FOLDER
 #
-# The database is disposable either way -- the test suite drops and recreates the
-# schema in a fixture -- but keeping it means a restart costs a re-run rather
-# than a re-provision.
+# This script previously bind-mounted PGDATA into the Studio folder, on the
+# reasonable-sounding theory that it was the only durable path. It does not work.
+# The Studio folder is a network FUSE mount, and PostgreSQL needs more from a
+# filesystem than durable file contents: after a host restart the container
+# refused to start with
+#
+#     FATAL: could not open directory "pg_notify": No such file or directory
+#
+# The files were mostly still there, which is exactly what made the mistake easy
+# to make. An earlier check proved a table survived `docker rm -f` and concluded
+# persistence worked -- but that tested file durability, not whether PostgreSQL
+# could *start* from the directory, which is the property that matters.
+#
+# So PGDATA is container-local by default and the database is recreated from
+# scratch on every start. That costs nothing: the test suite drops and recreates
+# the schema in a fixture, so there is no state worth keeping. Set PG_DIR only on
+# a filesystem with real POSIX semantics (a normal ext4/xfs volume), never on a
+# FUSE or network mount.
 #
 # Usage:
 #   scripts/remote_pg.sh up      # create/start, idempotent
@@ -25,10 +37,10 @@
 #   scripts/remote_pg.sh status  # is it up, and is the schema present
 #
 # Env:
-#   REMOTE       ssh destination            (default: from SSH_REMOTE, see below)
-#   PG_DIR       persistent PGDATA dir       (default: Studio folder, see below)
-#   LOCAL_PORT   local tunnel port          (default: 55432)
-#   PG_PASSWORD  superuser password         (default: forgesight)
+#   REMOTE       ssh destination   (or SSH_REMOTE)
+#   PG_DIR       PGDATA directory  (default: container-local; see above)
+#   LOCAL_PORT   local tunnel port (default: 55432)
+#   PG_PASSWORD  superuser password (default: forgesight)
 
 set -euo pipefail
 
@@ -39,10 +51,10 @@ PG_PASSWORD="${PG_PASSWORD:-forgesight}"
 LOCAL_PORT="${LOCAL_PORT:-55432}"
 CONTAINER="${CONTAINER:-fs-pg}"
 
-# The Studio folder is the only path that survives a stop. It is discovered
-# rather than hardcoded because the studio name differs per account; the
-# this_studio symlink is Lightning's own stable alias for it.
-PG_DIR="${PG_DIR:-$(dirname "$0")/../.remote/pgdata}"
+# Empty means container-local storage, recreated on every `up`. Set this only on
+# a real local filesystem; a FUSE mount will produce a PGDATA that looks intact
+# and will not start.
+PG_DIR="${PG_DIR:-}"
 REMOTE="${REMOTE:-${SSH_REMOTE:-}}"
 
 if [ -z "$REMOTE" ]; then
@@ -54,41 +66,64 @@ fi
 log() { printf '[remote-pg] %s\n' "$*" >&2; }
 
 cmd_up() {
-  log "creating persistent PGDATA at $PG_DIR"
-  ssh "$REMOTE" "mkdir -p '$PG_DIR'"
+  if [ -n "$PG_DIR" ]; then
+    log "using PGDATA at $PG_DIR (must be a real POSIX filesystem, not FUSE)"
+    ssh "$REMOTE" "mkdir -p '$PG_DIR'"
+  else
+    log "container-local PGDATA; recreated on every start"
+  fi
 
   if ssh "$REMOTE" "docker ps --format '{{.Names}}' | grep -qx '$CONTAINER'"; then
     log "$CONTAINER is already running"
   else
-    # --restart unless-stopped: the container comes back on its own if the VM is
-    # restarted in place. It does not survive a full reprovision, which is what
-    # this script is for.
+    # A container left behind by a previous host is recreated, not reused: its
+    # writable layer may hold a PGDATA that no longer matches PG_DIR (or, on a
+    # FUSE mount, does not work at all). --restart unless-stopped covers an
+    # in-place restart; this covers a reprovision.
+    if ssh "$REMOTE" "docker ps -aq -f name='^$CONTAINER\$'" | grep -q .; then
+      log "removing a stopped $CONTAINER from a previous host"
+      ssh "$REMOTE" "docker rm -f $CONTAINER" >/dev/null
+    fi
+
     log "starting $CONTAINER ($PG_IMAGE)"
+    local volume=""
+    if [ -n "$PG_DIR" ]; then
+      volume="-v '$PG_DIR:/var/lib/postgresql/data'"
+    fi
     ssh "$REMOTE" "docker run -d --name $CONTAINER \
       --restart unless-stopped \
       -p 127.0.0.1:5432:5432 \
       -e POSTGRES_USER=$PG_USER \
       -e POSTGRES_PASSWORD=$PG_PASSWORD \
       -e POSTGRES_DB=$PG_DB \
-      -v '$PG_DIR:/var/lib/postgresql/data' \
+      $volume \
       $PG_IMAGE" >/dev/null
   fi
 
   log "waiting for readiness"
+  ready=0
   for _ in $(seq 1 30); do
     if ssh "$REMOTE" "docker exec $CONTAINER pg_isready -U $PG_USER" >/dev/null 2>&1; then
       log "postgres is accepting connections"
+      ready=1
       break
     fi
     sleep 1
   done
+  if [ "$ready" -ne 1 ]; then
+    # A restart loop here is nearly always an unusable PGDATA, so say so rather
+    # than reporting a generic timeout.
+    log "postgres never became ready. Last log lines:"
+    ssh "$REMOTE" "docker logs --tail 5 $CONTAINER" >&2 || true
+    exit 1
+  fi
 
   log "tunnel: 127.0.0.1:$LOCAL_PORT -> remote 5432"
   log "export FORGESIGHT_TEST_PG='postgresql://$PG_USER:$PG_PASSWORD@127.0.0.1:$LOCAL_PORT/$PG_DB'"
 }
 
 cmd_down() {
-  log "removing $CONTAINER (PGDATA at $PG_DIR is left in place)"
+  log "removing $CONTAINER${PG_DIR:+ (PGDATA at $PG_DIR is left in place)}"
   ssh "$REMOTE" "docker rm -f $CONTAINER" >/dev/null 2>&1 || true
 }
 

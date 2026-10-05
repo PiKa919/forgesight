@@ -209,6 +209,10 @@ class SystemStatus(BaseModel):
     queue_limit: int
     worker_mem_budget_bytes: int
     memory_safety_margin: float
+    # The backstop, reported next to the budget it deliberately does not derive
+    # from. An operator tuning memory needs to see both numbers at once, or they
+    # will lower the budget and not realise the cap is a fraction of the host.
+    rss_hard_cap_fraction: float = 0.85
     admission_mispredictions: int
     reaper_last: dict[str, int] | None = None
     host_free_bytes: int | None = None

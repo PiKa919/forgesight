@@ -162,3 +162,93 @@ def test_observed_batches_are_kept_for_the_report():
     assert b == 2
     assert observed == int(300 * MB)
     assert predicted == a.predict(2)
+
+# -- the hard cap backstop (design §13.2: memory misprediction -> recycle) ---
+
+
+def test_the_hard_cap_is_a_fraction_of_total_host_memory(monkeypatch):
+    """Anchored to the machine, not to the budget admission is guessing at.
+
+    The two are separate on purpose: admission's budget is a prediction about
+    work not yet run and did not reproduce on this host (ADR 0004), so the
+    backstop is anchored to something that cannot drift.
+    """
+    from forgesight.worker import memprobe
+
+    monkeypatch.setattr(memprobe, "host_total_bytes", lambda: 16 * 1024 * MB)
+    assert memprobe.hard_cap_bytes(0.85) == int(16 * 1024 * MB * 0.85)
+    assert memprobe.hard_cap_bytes(0.5) < memprobe.hard_cap_bytes(0.85)
+
+
+def test_over_hard_cap_is_a_strict_comparison():
+    from forgesight.worker.memprobe import over_hard_cap
+
+    assert over_hard_cap(101, 100)
+    assert not over_hard_cap(100, 100), "exactly at the cap is not over it"
+    assert not over_hard_cap(99, 100)
+
+
+def test_an_unset_cap_never_forces_a_recycle():
+    """A zero or absent cap must mean "no opinion", not "always over".
+
+    Failing closed here would recycle the worker on every batch on a host where
+    the cap could not be computed, which is a self-inflicted outage.
+    """
+    from forgesight.worker.memprobe import over_hard_cap
+
+    assert not over_hard_cap(10**12, 0)
+    assert not over_hard_cap(10**12, -1)
+
+
+def test_a_failed_rss_measurement_does_not_recycle(monkeypatch):
+    """The worker must not recycle because psutil raised.
+
+    Recycling on an unreadable measurement trades a real process for a
+    measurement problem, which is exactly the wrong direction.
+    """
+    from forgesight.worker import main as worker_main
+
+    def boom(*_a, **_k):
+        raise RuntimeError("no /proc on this host")
+
+    monkeypatch.setattr(worker_main.psutil, "Process", boom)
+    w = object.__new__(worker_main.Worker)
+    from forgesight.settings import get_settings
+
+    w.s = get_settings()
+    assert w._over_hard_cap() is False
+
+
+def test_the_worker_recycles_when_measured_rss_exceeds_the_cap(monkeypatch):
+    from forgesight.worker import main as worker_main
+    from forgesight.worker import memprobe
+
+    monkeypatch.setattr(worker_main.psutil, "Process",
+                        lambda: type("P", (), {"memory_info": lambda s: type(
+                            "M", (), {"rss": int(900 * MB)})()})())
+    monkeypatch.setattr(memprobe, "host_total_bytes", lambda: 1024 * MB)
+    w = object.__new__(worker_main.Worker)
+    from forgesight.settings import get_settings
+
+    w.s = get_settings()
+    # Cap is 0.85 * 1 GiB = 870 MiB; the stub reports 900 MiB.
+    assert w._over_hard_cap() is True
+
+
+def test_system_status_reports_the_hard_cap_next_to_the_budget():
+    """An operator tuning memory must see both numbers, not just the soft one.
+
+    Otherwise they lower `worker_mem_budget` and never learn the cap is a
+    fraction of the host, so the two appear to be the same control.
+    """
+    from forgesight.api.schemas import SystemStatus
+
+    s = SystemStatus(
+        mode="local", dialect="sqlite", queue_depth=[], queue_limit=10,
+        worker_mem_budget_bytes=4 * 1024 * MB, memory_safety_margin=0.15,
+        admission_mispredictions=0,
+    )
+    assert 0.0 < s.rss_hard_cap_fraction < 1.0
+    body = s.model_dump()
+    assert "rss_hard_cap_fraction" in body
+    assert body["rss_hard_cap_fraction"] == body.get("rss_hard_cap_fraction")

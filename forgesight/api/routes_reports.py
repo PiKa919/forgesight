@@ -209,6 +209,7 @@ def system_status(p: Principal = Depends(operator)) -> SystemStatus:
         queue_limit=s.queue_depth_limit,
         worker_mem_budget_bytes=s.worker_mem_budget,
         memory_safety_margin=s.memory_safety_margin,
+        rss_hard_cap_fraction=s.rss_hard_cap_fraction,
         admission_mispredictions=r.mispredictions(p.workspace_id),
         host_free_bytes=free_bytes(),
         git_sha=_git_sha(),
