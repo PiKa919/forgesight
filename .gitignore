@@ -31,3 +31,10 @@ web/dist/
 # Local PGDATA checkout for scripts/remote_pg.sh, if run against this machine
 # rather than a remote host. A database directory must never be committed.
 .remote/
+
+# Build metadata from `pip install -e .` / setuptools. Regenerated on every
+# install, and it leaks the local Python version and absolute paths into the
+# tree, so it is never source.
+*.egg-info/
+build/
+dist/

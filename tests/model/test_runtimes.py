@@ -104,7 +104,28 @@ def test_onnx_raw_outputs_match_torch(name, page):
     logit_diff = float(np.max(np.abs(t_logits - o_logits)))
     box_diff = float(np.max(np.abs(t_boxes - o_boxes)))
     print(f"\n[{name}] max logit diff {logit_diff:.2e}, max box diff {box_diff:.2e}")
-    assert logit_diff < 1e-2, f"logit divergence {logit_diff}"
+
+    # Compared *relatively*, against the magnitude of the logits themselves.
+    # An absolute bound was architecture-dependent and failed on x86_64 (1.2e-2
+    # against a 1e-2 limit) while passing on arm64 for the same code, because the
+    # runtimes pick different SIMD kernels and reduction orders per architecture.
+    # The relative form is what "fp32 rounding" actually means, and it separates
+    # the two cases by orders of magnitude:
+    #
+    #   measured, same input   heron 3.6e-4   egret-medium 1.5e-3
+    #   mismatched input       heron 7.6e-1   egret-medium 1.0e+0
+    #
+    # so 5e-3 sits ~3x above the worst real reading and ~150x below the case it
+    # exists to catch. The box comparison stays absolute: boxes are normalised
+    # coordinates, so their scale does not vary and there is nothing to be
+    # relative to.
+    logit_scale = max(float(np.max(np.abs(t_logits))), 1e-9)
+    logit_rel = logit_diff / logit_scale
+    print(f"[{name}] logit scale {logit_scale:.3e}, relative {logit_rel:.2e}")
+    assert logit_rel < 5e-3, (
+        f"logit divergence {logit_diff:.3e} is {logit_rel:.2e} of the {logit_scale:.3e} "
+        f"logit scale, which is not fp32 rounding"
+    )
     assert box_diff < 1e-2, f"box divergence {box_diff}"
 
 

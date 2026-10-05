@@ -25,14 +25,61 @@ pytestmark = pytest.mark.integration
 # -- gate arithmetic --------------------------------------------------------
 
 
-def _cand(name: str = "c"):
-    from forgesight.vision.registry import registry
+def _cand():
+    """A stand-in candidate for the arithmetic tests.
 
-    s = get_settings()
-    for bc in registry(s):
-        if bc.role == "reference":
-            return bc.candidate
-    raise AssertionError(f"no reference candidate for {name}")
+    `judge` compares metric dicts and never reads a field off the Candidate
+    objects, so the gate tests do not need the real registry -- which is empty
+    until the weights are fetched. Reaching into it here made 16 tests in this
+    file fail on a fresh clone, for no behavioural reason.
+
+    Distinct reference and candidate objects, because that identity is the point:
+    a gate that compared a candidate to itself would pass everything.
+    """
+    from forgesight.vision.types import (
+        Candidate,
+        ModelArtifact,
+        PreprocessProfile,
+        RuntimeProfile,
+    )
+
+    def mk(name: str) -> Candidate:
+        return Candidate(
+            name=name,
+            artifact=ModelArtifact(
+                name=name,
+                path=f"/nonexistent/{name}",
+                sha256=f"{name}-sha",
+                # ArtifactFormat and ResizeMethod are Literal aliases, not enums,
+                # so these are the plain strings the type expects.
+                format="safetensors",
+                repo_id=f"example/{name}",
+                revision="0" * 40,
+                license="Apache-2.0",
+            ),
+            preprocess=PreprocessProfile(
+                resize="pil_bilinear",
+                target=640,
+                render_dpi=150,
+                tile_long_side_px=2200,
+                tile_aspect=1.6,
+                tile_overlap=0.2,
+                label_map_hash="lm",
+                processor_class="example",
+            ),
+            runtime=RuntimeProfile(
+                runtime="torch",
+                intra_op_threads=4,
+                inter_op_threads=1,
+                graph_opt_level="ORT_ENABLE_ALL",
+                max_batch=8,
+                batch_window_ms=25,
+            ),
+            score_threshold=0.3,
+            label_map_hash="lm",
+        )
+
+    return mk("candidate"), mk("reference")
 
 
 def _metrics(m: float, per_class: dict | None = None) -> dict:
@@ -41,7 +88,7 @@ def _metrics(m: float, per_class: dict | None = None) -> dict:
 
 def _judge(clean_ref, clean_cand, shift_ref, shift_cand,
            agreement=None, provenance=True, per_class=None):
-    cand, ref = _cand(), _cand()
+    cand, ref = _cand()
     return judge(
         candidate=cand, reference=ref,
         clean={"reference": clean_ref, "candidate": clean_cand},
@@ -162,7 +209,7 @@ def test_the_320px_candidate_is_actually_blocked_by_the_gates(stack_ctx):
 
     store = FsObjectStore(s.objects_dir)
     repo = WorkspaceRepo(pool)
-    _candidates(repo, ws)
+    _registry_candidates(repo, ws)
     for name in ("synth-clean", "synth-scan"):
         built = ds.build(name, s, store, limit=8)
         ds.persist(pool, ws, built)
@@ -212,17 +259,24 @@ def stack_ctx(tmp_path):
     reset_settings()
 
 
-def _candidates(repo, ws):
+def _registry_candidates(repo, ws):
+    """Register every candidate the registry can build, including the negative control.
+
+    The registry path, unlike `_candidates`, needs real weights: these rows are
+    used by the test that runs actual inference on the degraded 320px candidate,
+    so there is nothing to fake.
+    """
+    from forgesight.settings import get_settings
     from forgesight.vision.registry import registry
 
-    s = get_settings()
-    for bc in registry(s):
+    for bc in registry(get_settings()):
         if repo.find_candidate_by_hash(ws, bc.candidate.hash):
             continue
         pp, rt = repo.profiles_for(ws, bc.candidate.artifact, bc.candidate)
         with repo.pool.connection() as conn:
             art = conn.fetchone(
-                "SELECT id FROM model_artifact WHERE workspace_id = ? AND sha256 = ?",
+                f"SELECT id FROM model_artifact WHERE workspace_id = {repo.ph} "
+                f"AND sha256 = {repo.ph}",
                 (ws, bc.candidate.artifact.sha256),
             )
         repo.insert_candidate(
@@ -236,6 +290,80 @@ def _candidates(repo, ws):
 class _Row:
     def __init__(self, i):
         self.id = i
+
+
+def _candidates(repo, ws):
+    """Register candidates for `ws` and return them.
+
+    Promotes and rollbacks are pure channel and version bookkeeping: they read a
+    candidate row, an evaluation verdict and an artifact sha, and never load a
+    model. So these rows are inserted directly rather than built from the
+    registry, which is empty until the weights are fetched -- that made these
+    tests fail on a fresh clone for a reason that has nothing to do with what
+    they check.
+
+    A real file is written behind the artifact row because the promote path
+    re-verifies the artifact's sha256 against what is on disk before it will
+    switch a channel. Pointing at a nonexistent path fails that check, which is
+    correct behaviour and the wrong thing to assert here -- artifact integrity has
+    its own test, `test_rollback_is_refused_when_the_artifact_no_longer_matches`.
+    """
+    existing = repo.list_candidates(ws)
+    if existing:
+        return existing
+
+    import hashlib
+    from dataclasses import replace
+
+    from forgesight.ledger.claims import new_id
+
+    _, ref = _cand()
+    # A few bytes of deterministic content, so the sha below is real.
+    body = b"forgesight test artifact, not a model"
+    art_dir = get_settings().models_dir / "ref-alpha"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    (art_dir / "model.safetensors").write_bytes(body)
+    # ModelArtifact is frozen, so it is rebuilt rather than mutated.
+    art = replace(_artifact("ref-alpha"),
+                  path=str(art_dir),
+                  sha256=hashlib.sha256(body).hexdigest())
+
+    # profiles_for inserts the artifact row as well as the profile pair, and
+    # returns the profile ids; inserting the artifact again here would collide
+    # on UNIQUE(workspace_id, sha256), so the artifact id is read back.
+    pre_id, rt_id = repo.profiles_for(ws, art, ref)
+    with repo.pool.connection() as conn:
+        art_id = conn.fetchone(
+            f"SELECT id FROM model_artifact WHERE workspace_id = {repo.ph} AND sha256 = {repo.ph}",
+            (ws, art.sha256),
+        )["id"]
+
+    out = []
+    for name in ("ref-alpha", "ref-beta"):
+        cid = new_id("cand")
+        with repo.pool.write() as conn:
+            conn.execute(
+                "INSERT INTO candidate(id, workspace_id, name, candidate_hash, "
+                "artifact_id, preprocess_id, runtime_id, score_threshold, "
+                f"label_map_hash) VALUES ({','.join([repo.ph] * 9)})",
+                (cid, ws, name, f"{name}-hash", art_id, pre_id, rt_id, 0.3, "lm"),
+            )
+        out.append({"id": cid, "name": name, "workspace_id": ws})
+    return out
+
+
+def _artifact(name: str):
+    from forgesight.vision.types import ModelArtifact
+
+    return ModelArtifact(
+        name=name,
+        path=f"/nonexistent/{name}",
+        sha256=f"{name}-sha",
+        format="safetensors",
+        repo_id=f"example/{name}",
+        revision="0" * 40,
+        license="Apache-2.0",
+    )
 
 
 def _mark_evaluated(pool, ws, candidate_id, passed=True):

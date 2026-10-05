@@ -24,6 +24,7 @@ import pytest
 from forgesight.db.migrate import migrate
 from forgesight.db.pool import Dialect, get_pool
 from forgesight.settings import get_settings, reset_settings
+from tests.support import requires_weights
 
 PG_DSN = os.environ.get("FORGESIGHT_TEST_PG", "").strip()
 DSNS: dict[str, str] = {"sqlite": "sqlite:///./data/test_api_dialects.db"}
@@ -105,6 +106,7 @@ def stack(request, backend, tmp_path):
     reset_settings()
 
 
+@requires_weights
 def test_session_bootstrap_seeds_a_usable_workspace_on_every_backend(stack):
     """POST /sessions registers the built-in candidates and an active release.
 
@@ -113,6 +115,11 @@ def test_session_bootstrap_seeds_a_usable_workspace_on_every_backend(stack):
     insert, release insert, channel update -- completes on both backends. A fresh
     workspace with no active release would refuse every upload, so this is the
     "a new session is immediately usable" property.
+
+    Needs weights: the seed registers whatever is in the candidate registry, and
+    the registry is empty until the models are fetched. Without weights
+    POST /sessions correctly returns 503 instead, which
+    test_session_bootstrap_refuses_when_no_models_are_registered covers.
     """
     client, _pool, _repo, _ws = stack
     first = client.post("/v1/sessions", json={"kind": "personal"})
@@ -121,11 +128,12 @@ def test_session_bootstrap_seeds_a_usable_workspace_on_every_backend(stack):
     assert body["token"], body
 
     # The seed must have produced candidates and an active release.
-    listed = client.get("/v1/candidates", headers={"Authorization": "Bearer " + body["token"]})
+    auth = {"Authorization": "Bearer " + body["token"]}
+    listed = client.get("/v1/candidates", headers=auth)
     assert listed.status_code == 200, listed.text
     assert listed.json(), "session seed registered no candidates"
 
-    rel = client.get("/v1/releases", headers={"Authorization": "Bearer " + body["token"]})
+    rel = client.get("/v1/releases", headers=auth)
     assert rel.status_code == 200, rel.text
     assert rel.json()["active_release_id"], "session seed left no active release"
 

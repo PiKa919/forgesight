@@ -37,3 +37,32 @@ requires_heron = pytest.mark.skipif(
     not have_weights("heron"),
     reason="heron weights absent; run scripts/fetch_models.py",
 )
+
+
+def skip_model_tests_without_weights(items: list[pytest.Item]) -> None:
+    """Make `@pytest.mark.model` mean something on a clone without weights.
+
+    The mark was previously only a label, so `@pytest.mark.model` selected tests
+    for `make test-model` but did nothing to stop them running elsewhere. Seven
+    tests in tests/integration were marked that way and failed on a fresh clone,
+    because they register candidates from the registry and run inference --
+    both of which need the weights.
+
+    Enforcing it from the marker's own definition means the label and the
+    behaviour cannot drift apart again: a test that needs weights now skips on
+    any environment without them, which is what this module already promises in
+    its docstring.
+
+    Called from tests/conftest.py, because a hook only auto-registers from a
+    conftest.
+    """
+    missing = [n for n in MODEL_NAMES if not have_weights(n)]
+    if not missing:
+        return
+    reason = (
+        f"model weights absent for {', '.join(missing)}; "
+        "run `uv run python scripts/fetch_models.py`"
+    )
+    for item in items:
+        if item.get_closest_marker("model"):
+            item.add_marker(pytest.mark.skip(reason=reason))

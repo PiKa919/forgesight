@@ -59,7 +59,13 @@ def stack(tmp_path):
 @pytest.fixture
 def session(stack):
     _, _, _, client = stack
+    # Session bootstrap registers whatever is in the candidate registry, and
+    # refuses with a 503 when the registry is empty. Skipping here is the honest
+    # outcome on a clone without `make fetch`; the refusal itself is asserted in
+    # tests/integration/test_api_dialects.py.
     r = client.post("/v1/sessions")
+    if r.status_code == 503:
+        pytest.skip("model weights absent; run `uv run python scripts/fetch_models.py`")
     assert r.status_code == 201, r.text
     body = r.json()
     return body, {"Authorization": f"Bearer {body['token']}"}
