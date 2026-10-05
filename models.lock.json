@@ -1,0 +1,40 @@
+{
+  "models": {
+    "heron": {
+      "repo_id": "docling-project/docling-layout-heron",
+      "revision": "main",
+      "files": {
+        "config.json": {
+          "sha256": "fdea30805ce2f5666b147fca941dcdd27ad468e27d6ed21902207d3da056a97d",
+          "size": 3268
+        },
+        "preprocessor_config.json": {
+          "sha256": "cd38cd59999e7a95d68e487fbe5132df3d4e5c32a0836add57e6126ba0c4eaf1",
+          "size": 444
+        },
+        "model.safetensors": {
+          "sha256": "00333a43451945aaf89db8ca9c0a17e75d1537c17db60fdb91aa95f4c7929e0c",
+          "size": 171658996
+        }
+      }
+    },
+    "egret-medium": {
+      "repo_id": "docling-project/docling-layout-egret-medium",
+      "revision": "main",
+      "files": {
+        "config.json": {
+          "sha256": "e099589367b56b77d4cfce99b0b0d0b610a66866da1b8c9c291b6de82b21007c",
+          "size": 4213
+        },
+        "preprocessor_config.json": {
+          "sha256": "cd38cd59999e7a95d68e487fbe5132df3d4e5c32a0836add57e6126ba0c4eaf1",
+          "size": 444
+        },
+        "model.safetensors": {
+          "sha256": "e7fc5b9a353826c123c5d03efc230909ac02b93e26293ec7cb4db8978fe9e3af",
+          "size": 78311396
+        }
+      }
+    }
+  }
+}

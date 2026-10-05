@@ -1,0 +1,11 @@
+.venv/
+.hf_home/
+__pycache__/
+*.pyc
+.pytest_cache/
+artifacts/
+models/
+data/
+*.onnx
+*.safetensors
+*.bin
