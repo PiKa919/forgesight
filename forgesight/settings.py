@@ -121,8 +121,45 @@ class Settings(BaseSettings):
             d.mkdir(parents=True, exist_ok=True)
 
 
+_SETTINGS_OVERRIDE: list[Settings] = []
+
+
 @lru_cache(maxsize=1)
-def get_settings() -> Settings:
+def _settings_from_env() -> Settings:
     s = Settings()
     os.environ.setdefault("HF_HOME", str(s.hf_home))
     return s
+
+
+def get_settings() -> Settings:
+    """The active settings: the override if one was configured, else the
+    environment. Every component resolves through here, so one call moves them
+    all."""
+    if _SETTINGS_OVERRIDE:
+        return _SETTINGS_OVERRIDE[-1]
+    return _settings_from_env()
+
+
+def configure(overrides: Settings | None = None, **kwargs) -> Settings:
+    """Replace the process-wide settings.
+
+    The API, the worker and the reaper all resolve settings through
+    `get_settings`, so a test that points them at a scratch directory has to be
+    able to move all three at once. Without this, an API writing to one data
+    directory and a worker reading another is a silent, total failure that looks
+    like a missing-file bug.
+    """
+    s = overrides if overrides is not None else Settings(**kwargs)
+    s.ensure_dirs()
+    os.environ["HF_HOME"] = str(s.hf_home)
+    _SETTINGS_OVERRIDE.append(s)
+    return s
+
+
+_SETTINGS_OVERRIDE: list[Settings] = []
+
+
+def reset_settings() -> None:
+    """Drop any override and re-read the environment."""
+    _SETTINGS_OVERRIDE.clear()
+    _settings_from_env.cache_clear()
