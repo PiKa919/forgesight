@@ -52,6 +52,9 @@ class TimingSplit(BaseModel):
 class ItemOut(BaseModel):
     id: str
     page_id: str
+    # Exposed so the viewer can say which candidate produced these boxes, which
+    # is the whole question when a batch is pinned to a release.
+    candidate_id: str
     state: str
     role: str
     attempts: int

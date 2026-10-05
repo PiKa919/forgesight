@@ -175,6 +175,20 @@ class ModelArtifact:
     def pool(self) -> Pool:
         return Pool.ORT if self.format.startswith("onnx") else Pool.TORCH
 
+    @property
+    def weights_path(self) -> str:
+        """The file whose bytes are covered by `sha256`.
+
+        For the safetensors format `path` is the model *directory*, and the hash
+        in the lockfile is of `model.safetensors` inside it. For the exported
+        formats `path` is the ONNX file itself. Resolving that in one place stops
+        an integrity check from being handed a directory and failing with
+        "Is a directory".
+        """
+        if self.format == "safetensors":
+            return f"{self.path.rstrip('/')}/model.safetensors"
+        return self.path
+
 
 @dataclass(frozen=True, slots=True)
 class Candidate:

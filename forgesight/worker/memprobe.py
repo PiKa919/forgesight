@@ -26,7 +26,16 @@ import psutil
 
 @dataclass(slots=True)
 class Calibration:
-    """Fitted memory model for one candidate on one host."""
+    """Fitted memory model for one candidate on one host.
+
+    `valid` is the important field. RSS is a high-water mark that neither Python
+    nor either runtime returns to the OS, so a batch smaller than one already
+    run adds nothing measurable and the samples are mostly zeros. A least-squares
+    line through those has a *negative* intercept, which is not a memory model --
+    it is arithmetic on a degenerate sample. When that happens `valid` is False
+    and admission falls back to the largest measured peak, which is
+    conservative: it assumes more memory than the fit would have.
+    """
 
     m0_bytes: int
     m_item_bytes: float
@@ -34,15 +43,22 @@ class Calibration:
     samples: dict[int, int] = field(default_factory=dict)
     host_fingerprint: str = ""
     measured_at: float = 0.0
+    valid: bool = True
+    invalid_reason: str = ""
 
     def peak(self, b: int) -> int:
-        return int(self.m0_bytes + b * self.m_item_bytes)
+        if self.valid:
+            return int(self.m0_bytes + b * self.m_item_bytes)
+        known = [v for v in self.samples.values() if v > 0]
+        return int(max(known) if known else 0)
 
     def as_dict(self) -> dict:
         return {
             "m0_bytes": self.m0_bytes,
             "m_item_bytes": round(self.m_item_bytes, 1),
             "max_residual": round(self.max_residual, 1),
+            "valid": self.valid,
+            "invalid_reason": self.invalid_reason,
             "samples": {str(k): v for k, v in sorted(self.samples.items())},
             "host_fingerprint": self.host_fingerprint,
             "measured_at": self.measured_at,
@@ -86,8 +102,20 @@ def fit(samples: dict[int, int]) -> Calibration:
     ) / denom
     intercept = mean_y - slope * mean_x
     residuals = [abs(y - (intercept + slope * x)) for x, y in zip(xs, ys, strict=True)]
+
+    # A negative intercept means the fit claims memory is released between
+    # batch sizes, which cannot happen. The model is then marked invalid rather
+    # than reported, and admission uses the largest measured peak instead.
+    invalid = ""
+    if intercept < 0:
+        invalid = (
+            f"the fit gives a negative intercept ({intercept:.0f} B), i.e. it claims "
+            f"memory is released as the batch shrinks; RSS is a high-water mark so "
+            f"that is impossible. Admission falls back to the largest measured peak."
+        )
     return Calibration(
-        int(intercept), slope, max(residuals), dict(samples), measured_at=time.time()
+        int(intercept), slope, max(residuals), dict(samples), measured_at=time.time(),
+        valid=not invalid, invalid_reason=invalid,
     )
 
 
@@ -126,10 +154,13 @@ class Admission:
         budget = self.effective_budget - pending_bytes
         if budget <= 0:
             return 0
-        # Widen by the fit's own residual, so a known-noisy fit is not treated
-        # as more precise than it is.
+        cal = self.calibration
+        # Widen by the fit's own residual, so a known-noisy fit is not treated as
+        # more precise than it is. An invalid fit has no usable residual, so the
+        # whole measured peak is treated as the uncertainty.
+        slack = cal.max_residual if cal.valid else 0
         for b in range(min(requested_b, self.max_batch), 0, -1):
-            if self.calibration.peak(b) + self.max_residual <= budget:
+            if cal.peak(b) + slack <= budget:
                 return b
         return 0
 
@@ -150,6 +181,10 @@ class Admission:
             "budget_bytes": self.budget_bytes,
             "effective_budget_bytes": self.effective_budget,
             "calibrated": self.calibration is not None,
+            "calibration_valid": bool(self.calibration and self.calibration.valid),
+            "calibration_note": (
+                self.calibration.invalid_reason if self.calibration else ""
+            ),
             "m0_bytes": self.calibration.m0_bytes if self.calibration else None,
             "m_item_bytes": (
                 round(self.calibration.m_item_bytes, 1) if self.calibration else None

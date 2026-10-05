@@ -61,6 +61,7 @@ markers = [
     "model: needs downloaded model weights (slow)",
     "integration: needs Postgres",
     "e2e: needs the full stack running",
+    "slow: takes more than a second",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

@@ -116,6 +116,24 @@ class WorkspaceRepo:
         object_key: str,
         normalized: str | None = None,
     ) -> str:
+        """Insert a page row, or return the existing one for the same content.
+
+        Idempotent on purpose. A page is content, not an event: uploading the
+        same file into a second batch must reuse the row rather than collide
+        with the UNIQUE(workspace_id, asset_id, page_index) constraint. Two
+        batches referencing the same page is exactly what that uniqueness is for.
+        """
+        with self.pool.connection() as conn:
+            row = conn.fetchone(
+                f"SELECT id, object_key FROM page WHERE workspace_id = {self.ph} "
+                f"AND asset_id = {self.ph} AND page_index = {self.ph}",
+                (ws, asset_id, page_index),
+            )
+        if row is not None:
+            # The stored render wins even if this upload would render
+            # differently, because it is what predictions may already have been
+            # computed from. Replacing it would invalidate them silently.
+            return row["id"]
         pid = new_id("pg")
         with self.pool.write() as conn:
             conn.execute(
@@ -173,22 +191,27 @@ class WorkspaceRepo:
             )
 
     def profiles_for(self, ws: str, artifact, candidate) -> tuple[str, str]:
-        """Ensure the profile rows exist for a candidate, and return their ids.
+        """Ensure the profile and artifact rows exist for a candidate.
 
-        Profiles are content-addressed by hash, so repeated registration of the
-        same configuration is a no-op rather than a duplicate.
+        Profiles live in the owning workspace rather than in a shared sentinel
+        workspace. A sentinel would need its own row, and the composite
+        foreign keys correctly refuse to invent one -- and per-workspace rows are
+        idempotent anyway, because UNIQUE(workspace_id, profile_hash) makes
+        re-registering the same configuration a no-op rather than a duplicate.
         """
-        pp_id = self._ensure_profile("preprocess_profile", candidate.preprocess.hash,
+        pp_id = self._ensure_profile(ws, "preprocess_profile", candidate.preprocess.hash,
                                      json.dumps(candidate.preprocess.as_dict()))
-        rt_id = self._ensure_profile("runtime_profile", candidate.runtime.hash,
+        rt_id = self._ensure_profile(ws, "runtime_profile", candidate.runtime.hash,
                                      json.dumps(candidate.runtime.as_dict()))
         self._ensure_artifact(ws, artifact)
         return pp_id, rt_id
 
-    def _ensure_profile(self, table: str, phash: str, body: str) -> str:
+    def _ensure_profile(self, ws: str, table: str, phash: str, body: str) -> str:
         with self.pool.connection() as conn:
             row = conn.fetchone(
-                f"SELECT id FROM {table} WHERE profile_hash = {self.ph} LIMIT 1", (phash,)
+                f"SELECT id FROM {table} WHERE workspace_id = {self.ph} "
+                f"AND profile_hash = {self.ph}",
+                (ws, phash),
             )
         if row:
             return row["id"]
@@ -197,7 +220,7 @@ class WorkspaceRepo:
             conn.execute(
                 f"INSERT INTO {table}(id, workspace_id, profile_hash, body) "
                 f"VALUES ({self._p(4)})",
-                (pid, _ANY_WORKSPACE, phash, body),
+                (pid, ws, phash, body),
             )
         return pid
 
@@ -447,13 +470,6 @@ class WorkspaceRepo:
                 f"WHERE e.workspace_id = {self.ph} AND e.id = {self.ph}",
                 (ws, evaluation_id),
             )
-
-
-# Profiles and artifacts are process-wide immutable content, but the schema
-# scopes every table by workspace. They are registered under a fixed sentinel
-# workspace so a shared profile is not duplicated per tenant, and the candidate
-# that references them is still workspace-scoped.
-_ANY_WORKSPACE = "ws_shared"
 
 
 def _now() -> datetime:

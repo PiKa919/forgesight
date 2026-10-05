@@ -1,16 +1,18 @@
+import json
 import os
 import sys
 import time
-import json
 from pathlib import Path
+
 import psutil
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from forgesight.synth.generator import generate_synthetic_page
-from forgesight.vision.runtimes.torch_rt import TorchLayoutModel
 from forgesight.vision.runtimes.ort_rt import OrtLayoutModel
+from forgesight.vision.runtimes.torch_rt import TorchLayoutModel
+
+from forgesight.synth.generator import generate_synthetic_page
 from forgesight.vision.export_onnx import export_to_onnx
+
 
 def profile():
     proc = psutil.Process(os.getpid())

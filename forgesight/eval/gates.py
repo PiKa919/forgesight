@@ -96,18 +96,26 @@ def judge(
     cand_pc = clean["candidate"].get("per_class_ap", {})
     worst: list[tuple[str, float]] = []
     for cls in CRITICAL_CLASSES:
-        if cls not in ref_pc or cls not in cand_pc:
-            # A class the reference found but the candidate did not is the
-            # worst possible case, not a class to skip.
-            if cls in ref_pc and cls not in cand_pc:
-                worst.append((cls, -1.0))
+        if cls not in ref_pc:
+            # The reference never found it either, so there is nothing to hold
+            # the candidate to.
             continue
-        worst.append((cls, cand_pc[cls] - ref_pc[cls]))
-    ok_g3 = all(d <= GATE_POLICY["G3_critical_classes"]["max_drop"] for _, d in worst)
+        if cls not in cand_pc:
+            # The reference found it and the candidate did not: a total loss for
+            # that class, which is the largest possible drop. Expressed as a
+            # positive drop like every other entry, so the comparison below is
+            # the same sign for every case.
+            worst.append((cls, ref_pc[cls]))
+            continue
+        # A drop is reference minus candidate, so a loss is a positive number.
+        # Sign matters: computing it the other way round makes every
+        # regression look like an improvement and the gate never fires.
+        worst.append((cls, ref_pc[cls] - cand_pc[cls]))
+    ok_g3 = all(drop <= GATE_POLICY["G3_critical_classes"]["max_drop"] for _, drop in worst)
     out.append(_verdict(
         "G3_critical_classes", ok_g3,
         {c: round(d, 5) for c, d in worst}, GATE_POLICY["G3_critical_classes"]["max_drop"],
-        "; ".join(f"{c} {d:+.5f}" for c, d in worst) or "no critical classes present",
+        "; ".join(f"{c} -{d:.5f}" for c, d in worst if d > 0) or "no critical class dropped",
     ))
 
     if agreement is None:

@@ -81,7 +81,7 @@ class TorchModel:
             torch.set_num_interop_threads(profile.inter_op_threads)
 
         model_dir = Path(artifact.path)
-        verify_artifact(model_dir / "model.safetensors", artifact.sha256)
+        verify_artifact(Path(artifact.weights_path), artifact.sha256)
         self.id2label = read_id2label(model_dir)
         self.label_map_hash = label_map_hash(self.id2label)
         self.model = AutoModelForObjectDetection.from_pretrained(

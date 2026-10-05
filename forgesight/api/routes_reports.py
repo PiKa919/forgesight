@@ -48,12 +48,12 @@ def create_candidate(
             (p.workspace_id, body.artifact_sha256),
         )
         pre = conn.fetchone(
-            "SELECT * FROM preprocess_profile WHERE profile_hash = ?",
-            (body.preprocess_hash,),
+            "SELECT * FROM preprocess_profile WHERE workspace_id = ? AND profile_hash = ?",
+            (p.workspace_id, body.preprocess_hash),
         )
         rt = conn.fetchone(
-            "SELECT * FROM runtime_profile WHERE profile_hash = ?",
-            (body.runtime_hash,),
+            "SELECT * FROM runtime_profile WHERE workspace_id = ? AND profile_hash = ?",
+            (p.workspace_id, body.runtime_hash),
         )
     if art is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown artifact sha256")
@@ -222,10 +222,12 @@ def _candidate_out(pool, row) -> CandidateOut:
             (row["workspace_id"], row["artifact_id"]),
         )
         pre = conn.fetchone(
-            "SELECT body FROM preprocess_profile WHERE id = ?", (row["preprocess_id"],)
+            "SELECT body FROM preprocess_profile WHERE workspace_id = ? AND id = ?",
+            (row["workspace_id"], row["preprocess_id"]),
         )
         rt = conn.fetchone(
-            "SELECT body FROM runtime_profile WHERE id = ?", (row["runtime_id"],)
+            "SELECT body FROM runtime_profile WHERE workspace_id = ? AND id = ?",
+            (row["workspace_id"], row["runtime_id"]),
         )
     import json as _json
 

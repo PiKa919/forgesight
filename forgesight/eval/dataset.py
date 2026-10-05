@@ -153,9 +153,13 @@ def build(
             per_class[cn] = per_class.get(cn, 0) + 1
         pages.append(bp)
 
+    # The manifest covers content only: the rendered page's bytes, the
+    # annotations, and the split. Including the freshly generated page id would
+    # make the hash differ on every run, which is exactly what a content hash
+    # must not do -- the page id is an identity, not a property of the data.
     manifest = [
         {"page_sha": Path(bp.object_key).stem, "annotation": annotation_hash(bp),
-         "split": bp.split, "page_id": bp.page_id}
+         "split": bp.split}
         for bp in pages
     ]
     mhash = canonical_hash(manifest)
@@ -258,7 +262,7 @@ def load_truth(pool: PoolLike, ws: str, name: str, split: str) -> list:
 
     with pool.connection() as conn:
         rows = conn.fetchall(
-            "SELECT p.id, p.width_px, p.height_px, a.x1, a.y1, a.x2, a.y2, a.class_id "
+            "SELECT p.id, p.width_px, p.height_px, a.x1, a.y1, a.x2, a.y2, a.class_name "
             "FROM annotation a JOIN page p ON p.id = a.page_id "
             "AND p.workspace_id = a.workspace_id "
             "JOIN dataset_version d ON d.id = a.dataset_version_id "
@@ -273,7 +277,7 @@ def load_truth(pool: PoolLike, ws: str, name: str, split: str) -> list:
             r["id"], PageTruth(r["id"], r["width_px"], r["height_px"])
         )
         t.boxes.append([r["x1"], r["y1"], r["x2"], r["y2"]])
-        t.class_ids.append(r["class_id"])
+        t.class_names.append(r["class_name"])
     return list(by_page.values())
 
 

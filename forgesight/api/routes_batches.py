@@ -248,12 +248,21 @@ def _status_for(exc: ValidationError) -> int:
 
 
 def _active_release(r: WorkspaceRepo, ws: str):
-    ch = r.ensure_channel(ws)
+    """The channel's active release, not merely the newest release row.
+
+    Resolving "the latest release" by timestamp looks equivalent and is not:
+    `created_at` has one-second resolution, so two promotes inside the same
+    second tie, and the older release can win. `channel.active_release_id` is
+    the field that actually means "what is live", and promote/rollback are the
+    only things that change it.
+    """
+    channel_id = r.ensure_channel(ws)
     with get_pool_singleton().connection() as conn:
         return conn.fetchone(
-            "SELECT * FROM release WHERE workspace_id = ? AND channel_id = ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (ws, ch),
+            "SELECT r.* FROM release r JOIN channel c "
+            "ON c.active_release_id = r.id AND c.workspace_id = r.workspace_id "
+            "WHERE c.id = ? AND r.workspace_id = ?",
+            (channel_id, ws),
         )
 
 
@@ -415,6 +424,7 @@ def _item_out(r: WorkspaceRepo, ws: str, row: dict) -> ItemOut:
     return ItemOut(
         id=row["id"],
         page_id=row["page_id"],
+        candidate_id=row["candidate_id"],
         state=row["state"],
         role=row["role"],
         attempts=int(row["attempts"]),

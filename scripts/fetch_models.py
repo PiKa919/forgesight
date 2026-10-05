@@ -14,8 +14,8 @@ from pathlib import Path
 
 os.environ.setdefault("HF_HOME", str(Path(__file__).resolve().parents[1] / ".hf_home"))
 
-from forgesight.settings import get_settings  # noqa: E402
-from forgesight.vision.export_onnx import file_sha256  # noqa: E402
+from forgesight.settings import get_settings
+from forgesight.vision.export_onnx import file_sha256
 
 
 def fetch(force: bool = False) -> int:

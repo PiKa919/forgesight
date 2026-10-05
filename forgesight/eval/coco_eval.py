@@ -31,11 +31,20 @@ EVAL_SCORE_FLOOR = 0.05
 
 @dataclass(slots=True)
 class PageTruth:
+    """Ground truth for one page.
+
+    Classes are named, not numbered. The models emit a label string, and storing
+    a number as well invites the two from drifting apart -- an index space on one
+    side and a name on the other, which is a silent mis-scoring rather than an
+    error. `category_ids()` still supplies the full ordered list so that
+    per-class AP covers classes a particular page happens not to contain.
+    """
+
     page_id: str
     width: int
     height: int
     boxes: list[list[float]] = field(default_factory=list)
-    class_ids: list[int] = field(default_factory=list)
+    class_names: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -61,7 +70,12 @@ def to_coco(
     for i, t in enumerate(truths):
         images.append({"id": i, "width": t.width, "height": t.height,
                        "page_id": t.page_id})
-        for box, cid in zip(t.boxes, t.class_ids, strict=True):
+        for box, name in zip(t.boxes, t.class_names, strict=True):
+            if name not in cat_index:
+                raise KeyError(
+                    f"ground-truth class {name!r} is not in the category list; "
+                    f"refusing to score it under a different class"
+                )
             x1, y1, x2, y2 = box
             w, h = max(0.0, x2 - x1), max(0.0, y2 - y1)
             if w <= 0 or h <= 0:
@@ -70,7 +84,7 @@ def to_coco(
                 # lower for a reason unrelated to the model.
                 continue
             annotations.append({
-                "id": ann_id, "image_id": i, "category_id": cat_index[category_ids[cid]],
+                "id": ann_id, "image_id": i, "category_id": cat_index[name],
                 "bbox": [x1, y1, w, h], "area": w * h, "iscrowd": 0,
             })
             ann_id += 1
@@ -89,13 +103,17 @@ def to_coco(
         for d in p.detections:
             if d.score < EVAL_SCORE_FLOOR:
                 continue
+            if d.label not in cat_index:
+                # A detection of a class outside the scored set is dropped, not
+                # folded into some other category.
+                continue
             x1, y1, x2, y2 = d.box
             w, h = max(0.0, x2 - x1), max(0.0, y2 - y1)
             if w <= 0 or h <= 0:
                 continue
             dets.append({
                 "image_id": image_id,
-                "category_id": cat_index.get(d.label),
+                "category_id": cat_index[d.label],
                 "bbox": [x1, y1, w, h],
                 "score": d.score,
             })
@@ -140,15 +158,17 @@ def evaluate(
         e.summarize()
 
     per_class: dict[str, float] = {}
-    # COCOeval orders precision as [iou, recall, class, area, maxDet].
+    # COCOeval orders precision as [iou, recall, class, area, maxDet], and the
+    # class axis runs in the order of params.catIds, which is 1-based while
+    # category_ids is a plain 0-based list -- so the position is the index, not
+    # the category id.
     precision = e.eval["precision"]
     iou_thr = np.array(e.params.iouThrs)
-    cat_ids = list(e.params.catIds)
-    for idx, cid in enumerate(cat_ids):
+    for idx in range(len(e.params.catIds)):
         p = precision[:, :, idx, 0, -1]
         p = p[p > -1]
         if p.size:
-            per_class[category_ids[cid]] = round(float(p.mean()), 5)
+            per_class[category_ids[idx]] = round(float(p.mean()), 5)
 
     return {
         "map": round(float(e.stats[0]), 5),
@@ -219,10 +239,10 @@ def best_f1_threshold(
             got = pred_index.get(truth.page_id)
             dets = [d for d in (got.detections if got else []) if d.score >= t]
             used: set[int] = set()
-            for box, cid in zip(truth.boxes, truth.class_ids, strict=True):
+            for box, name in zip(truth.boxes, truth.class_names, strict=True):
                 best, best_iou = None, iou
                 for j, d in enumerate(dets):
-                    if j in used or d.class_id != cid:
+                    if j in used or d.label != name:
                         continue
                     v = iou_overlap(box, d.box)
                     if v >= best_iou:
@@ -254,10 +274,10 @@ def precision_recall(
         got = pred_index.get(truth.page_id)
         dets = [d for d in (got.detections if got else []) if d.score >= threshold]
         used: set[int] = set()
-        for box, cid in zip(truth.boxes, truth.class_ids, strict=True):
+        for box, name in zip(truth.boxes, truth.class_names, strict=True):
             best, best_iou = None, iou
             for j, d in enumerate(dets):
-                if j in used or d.class_id != cid:
+                if j in used or d.label != name:
                     continue
                 v = iou_overlap(box, d.box)
                 if v >= best_iou:

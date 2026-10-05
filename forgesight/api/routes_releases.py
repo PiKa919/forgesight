@@ -17,13 +17,14 @@ by accident:
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from forgesight.api.deps import Principal, get_pool_singleton, operator, owner
 from forgesight.api.repo import WorkspaceRepo, _iso
 from forgesight.api.schemas import (
     ChannelOut,
-    GateVerdict,
     PromoteRequest,
     PromoteResponse,
     ReleaseOut,
@@ -78,7 +79,7 @@ def promote(body: PromoteRequest, p: Principal = Depends(owner)) -> PromoteRespo
                     "code": "gates_not_evaluated",
                 },
             )
-        gates = evaluation["gates"] or []
+        gates = evaluation["gates"]
         failed = [g for g in gates if not g.get("passed")]
         if failed:
             raise HTTPException(
@@ -87,7 +88,12 @@ def promote(body: PromoteRequest, p: Principal = Depends(owner)) -> PromoteRespo
                     "detail": "candidate failed a release gate",
                     "code": "gate_failed",
                     "failed": [g.get("gate") for g in failed],
-                    "verdicts": [GateVerdict(**g) for g in gates],
+                    "verdicts": [
+                        {"gate": g.get("gate"), "passed": bool(g.get("passed")),
+                         "observed": g.get("observed"), "threshold": g.get("threshold"),
+                         "detail": g.get("detail")}
+                        for g in gates
+                    ],
                 },
             )
 
@@ -198,13 +204,38 @@ def _get_release(ws: str, release_id: str):
         )
 
 
-def _latest_evaluation(ws: str, candidate_id: str):
+def _latest_evaluation(ws: str, candidate_id: str) -> dict | None:
+    """Most recent completed evaluation, with its JSON columns decoded.
+
+    `gates` and `metrics` are TEXT columns holding JSON, so they have to be
+    parsed here. Returning the raw string would make every consumer treat each
+    gate verdict as a character.
+    """
     with get_pool_singleton().connection() as conn:
-        return conn.fetchone(
+        row = conn.fetchone(
             "SELECT * FROM evaluation_run WHERE workspace_id = ? AND candidate_id = ? "
             "AND status = 'done' ORDER BY created_at DESC LIMIT 1",
             (ws, candidate_id),
         )
+    if row is None:
+        return None
+    out = dict(row)
+    out["gates"] = _load_json(row["gates"], [])
+    out["metrics"] = _load_json(row["metrics"], {})
+    out["dataset_versions"] = _load_json(row["dataset_versions"], [])
+    out["env_manifest"] = _load_json(row["env_manifest"], {})
+    return out
+
+
+def _load_json(raw, default):
+    if raw is None:
+        return default
+    if isinstance(raw, (list, dict)):
+        return raw
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return default
 
 
 def _verify_artifact_intact(ws: str, candidate_id: str) -> None:
@@ -212,7 +243,7 @@ def _verify_artifact_intact(ws: str, candidate_id: str) -> None:
 
     with get_pool_singleton().connection() as conn:
         row = conn.fetchone(
-            "SELECT a.path, a.sha256 FROM candidate c "
+            "SELECT a.path, a.sha256, a.format FROM candidate c "
             "JOIN model_artifact a ON a.id = c.artifact_id "
             "AND a.workspace_id = c.workspace_id "
             "WHERE c.workspace_id = ? AND c.id = ?",
@@ -222,8 +253,13 @@ def _verify_artifact_intact(ws: str, candidate_id: str) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "candidate has no artifact")
     from pathlib import Path
 
+    # The stored path is a directory for safetensors artifacts, so the file to
+    # hash is resolved rather than assumed.
+    target = Path(row["path"])
+    if row["format"] == "safetensors":
+        target = target / "model.safetensors"
     try:
-        verify_artifact(Path(row["path"]), row["sha256"])
+        verify_artifact(target, row["sha256"])
     except Exception as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, f"artifact integrity: {exc}"
