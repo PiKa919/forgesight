@@ -11,7 +11,7 @@ pypdfium2 at the profile DPI. Because the ground truth is the drawing operation
 rather than a label applied afterwards, the boxes are exact by construction.
 
 **Content is generated, not sampled.** Text is assembled from a small in-repo
-vocabulary (`forgesight/synth/textgen.py`) with a seeded PRNG — no copyrighted
+vocabulary (`forgesight/synth/textgen.py`) with a seeded PRNG, so no copyrighted
 corpus, no scraped text. Figures are drawn procedurally. Fonts are the ones
 bundled with ReportLab.
 
@@ -37,7 +37,7 @@ carry the `synthetic:` provenance above rather than the upload marker.
 | `synth-bench` | 1 | 200 (incl. 40 two-up) | performance benchmarks, tiling experiment |
 
 A dataset version's `manifest_hash` is the sha256 of a canonical JSON listing
-every `(page_sha, annotation_sha, split)`. It covers content only — deliberately
+every `(page_sha, annotation_sha, split)`. It covers content only, deliberately
 not the generated page id, which is an identity and would make the hash differ
 on every run.
 
@@ -66,7 +66,7 @@ box *upward*.
 
 **The synthetic box conventions are this repository's, not DocLayNet's.** Paragraph
 granularity, where a table box stops and a caption box starts, what counts as one
-`text` region — these are choices made here.
+`text` region, and these are choices made here.
 
 So the absolute mAP figures in any report are **not comparable with published
 numbers**, and the report says so in its Limits section. What is meaningful is
@@ -83,8 +83,8 @@ and repeated here because it is the one thing a reader must not skip.
 
 An optional local-only DocLayNet sanity subset was considered for a later phase
 and is deliberately deferred. It is CDLA-Permissive-1.0, and it may overlap the
-evaluation data of the two models used here — see the technical report
-(arXiv:2509.11720) — so it would be a weak sanity check rather than a headline
+evaluation data of the two models used here (see the technical report,
+arXiv:2509.11720), so it would be a weak sanity check rather than a headline
 metric.
 
 ## Reproducing

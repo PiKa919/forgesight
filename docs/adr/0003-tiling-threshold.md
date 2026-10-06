@@ -36,7 +36,7 @@ is 19% under the aspect threshold.
 
 The tempting fix is to lower `tile_long_side_px` until the two-up page tiles. That
 would be fitting a policy number to make a test pass, and it would be fitting it
-to one page size at one DPI — the threshold would then mean nothing as a policy.
+to one page size at one DPI, and then the threshold would mean nothing as a policy.
 
 Instead:
 

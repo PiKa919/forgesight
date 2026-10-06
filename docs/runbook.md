@@ -35,7 +35,7 @@ The reason is measurement integrity rather than disk space. Initialising a CUDA
 context reserves host memory that has nothing to do with the model, and the
 headline output of this project is a **per-runtime peak RSS figure**. A CUDA
 torch in the torch worker would inflate exactly the number the system exists to
-measure, while the ONNX worker's figure stayed honest — so the comparison would
+measure, while the ONNX worker's figure stayed honest. The comparison would
 have been structurally unfair, in a direction that flattered whichever runtime
 got the smaller image.
 
@@ -51,7 +51,7 @@ Both models run on the CPU-only torch build: `heron` in 4550 ms and
 RSS.
 
 macOS is unaffected. The marker is `sys_platform == 'linux'`, so `make install`
-on the M5 still gets the native PyPI wheel, which is also CPU-only — there is no
+on the M5 still gets the native PyPI wheel, which is also CPU-only. There is no
 CUDA build for macOS.
 
 Then four processes, in four terminals:
@@ -101,7 +101,7 @@ allocator and the per-runtime memory figures would stop meaning anything.
 **Read this before quoting any container number.** A Podman machine is a Linux
 VM with its own CPU count and its own memory. A benchmark taken inside these
 containers describes that VM, not the host. It is a separate, labelled
-experiment — never comparable with a native run.
+experiment, never comparable with a native run.
 
 ## 3. Benchmarks
 
@@ -144,14 +144,14 @@ only for the host and date in the manifest.
 
 Then check, in this order:
 
-1. **Host stamp** — if the CPU or library versions are not the ones you care
+1. **Host stamp.** If the CPU or library versions are not the ones you care
    about, stop.
-2. **Stability** — anything marked unstable is excluded from comparison, and the
+2. **Stability.** Anything marked unstable is excluded from comparison, and the
    report says which configurations were dropped and why.
-3. **Comparisons** — a speedup sentence is only emitted between stable
+3. **Comparisons.** A speedup sentence is only emitted between stable
    configurations from the same run with the same env manifest, and it always
    carries its interval. If a comparison is refused, the sentence says so.
-4. **Memory model** — read whether the fit is marked usable. On this host it is
+4. **Memory model.** Read whether the fit is marked usable. On this host it is
    not; see [ADR 0004](adr/0004-memory-model-did-not-reproduce.md).
 
 ## 5. Operations
@@ -159,8 +159,8 @@ Then check, in this order:
 ### The remote PostgreSQL
 
 The dual-dialect suite needs a real PostgreSQL. If the host you have is
-**ephemeral** — a Lightning AI Studio, a CI sandbox, anything that discards state
-when it stops — read this first.
+**ephemeral**, such as a Lightning AI Studio or a CI sandbox, anything that
+discards state when it stops: read this first.
 
 `scripts/remote_pg.sh` is the supported way to provision it, and it is
 idempotent: run it again after a restart instead of rebuilding by hand.
@@ -180,7 +180,7 @@ export FORGESIGHT_TEST_PG='postgresql://forgesight:forgesight@127.0.0.1:55432/fo
 make test-all
 ```
 
-Running the suite *on* the remote host needs no tunnel — use
+Running the suite *on* the remote host needs no tunnel. Use
 `postgresql://forgesight:forgesight@127.0.0.1:5432/forgesight` there.
 
 ### Do not put PGDATA on a FUSE mount
@@ -188,7 +188,7 @@ Running the suite *on* the remote host needs no tunnel — use
 `PG_DIR` is **unset by default**, and that is deliberate. PGDATA is
 container-local and recreated on every start.
 
-The obvious improvement — bind-mounting PGDATA onto the only durable path — does
+The obvious improvement, bind-mounting PGDATA onto the only durable path, does
 not work on a Lightning AI Studio, and it fails in a way that looks like it
 worked. The persistent location is the Studio folder:
 
@@ -201,8 +201,8 @@ lightning on /teamspace/studios/this_studio type lightning (rw,relatime)
 `/teamspace/studios/this_studio` is the one to use; `this_studio` is Lightning's
 own stable alias, so it does not change with the account. It is a **network FUSE
 mount**, and PostgreSQL needs more from a filesystem than durable file contents.
-With PGDATA there, the container came back after a host restart looking healthy
-— the tables were still on disk — and then refused to start:
+With PGDATA there, the container came back after a host restart looking healthy.
+The tables were still on disk. Then it refused to start:
 
 ```
 FATAL:  could not open directory "pg_notify": No such file or directory
@@ -213,15 +213,15 @@ concluded persistence worked. That tested *file* durability; the property that
 matters is whether PostgreSQL can *start* from the directory. The two are
 different, and only the second one caught this.
 
-Set `PG_DIR` only on a real POSIX filesystem — a local ext4/xfs volume — never on
-FUSE or a network mount.
+Set `PG_DIR` only on a real POSIX filesystem, such as a local ext4 or xfs
+volume, never on FUSE or a network mount.
 
 Recreating the database costs nothing here: the test suite drops and recreates
 the schema in a fixture, so there is no state worth keeping. The script also
 passes `--restart unless-stopped` for an in-place restart, and removes a stopped
 container left by a previous host before recreating it.
 
-`/teamspace/uploads` is mounted **read-only** — not usable for anything.
+`/teamspace/uploads` is mounted **read-only**, so it is not usable for anything.
 
 ### Migrations
 
@@ -282,7 +282,7 @@ podman compose restart worker-torch
 A worker also recycles itself if its RSS exceeds the hard cap. The cap is
 `rss_hard_cap_fraction` (default 0.85) of **total** host memory, checked
 between micro-batches. On crossing it the worker finishes the batch in hand,
-persists it, stops claiming, and exits for the supervisor to restart — so the
+persists it, stops claiming, and exits for the supervisor to restart, so the
 replacement picks the work up immediately rather than waiting out a lease.
 
 The cap is deliberately *not* derived from `worker_mem_budget`. That number is
@@ -291,11 +291,11 @@ host the calibration fit produced a negative intercept and was marked invalid
 ([ADR 0004](adr/0004-memory-model-did-not-reproduce.md)). The hard cap is a
 measurement of what the process already did, anchored to the machine, and it is
 only ever a fallback. If RSS cannot be read at all the worker does **not**
-recycle — exiting a healthy process over a failed measurement is the wrong
+recycle. Exiting a healthy process over a failed measurement is the wrong
 trade.
 
 Recycles are counted in the worker's own `stats.recycles`, and are not yet
-surfaced through the API — `GET /v1/system/status` reports queue depth, the
+surfaced through the API. `GET /v1/system/status` reports queue depth, the
 memory budget, the safety margin and `admission_mispredictions` (read from
 stored evaluation records), but not live worker counters. A recycle therefore
 shows up in `logs/worker-<pool>.log` as `recycling: RSS is over the hard cap`.
@@ -303,21 +303,21 @@ Wiring `stats` through is the obvious next step if this ever runs unattended.
 
 ## 6. Troubleshooting
 
-**"running on battery power; connect AC to measure"** — the benchmark guard
+**"running on battery power; connect AC to measure".** The benchmark guard
 working as designed. Plug in, or use `--allow-unfavourable` and accept the label.
 
-**"database is locked"** — SQLite with more writers than it can serialise. WAL
+**"database is locked".** SQLite with more writers than it can serialise. WAL
 and the busy timeout are set on every connection; if this still appears, the
 filesystem does not support WAL locking (some network mounts), so use
 PostgreSQL.
 
-**401 on every request** — the token pepper differs between processes, or the
+**401 on every request.** The token pepper differs between processes, or the
 database was reset under a live token. `FORGESIGHT_TOKEN_PEPPER` must be set
 identically everywhere; the browser recovers on its own by minting a new session.
 
-**"artifact sha mismatch"** — the weights on disk differ from `models.lock.json`.
+**"artifact sha mismatch".** The weights on disk differ from `models.lock.json`.
 The load is refused rather than trusted. Re-fetch with `make fetch --force`.
 
-**A batch stays `queued`** — no worker for that pool. The design routes work to a
+**A batch stays `queued`.** No worker for that pool. The design routes work to a
 pool by the candidate's runtime, so a torch candidate needs `make worker-torch`
 running. Check `GET /v1/system/status` for queue depth per pool.

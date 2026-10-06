@@ -2,7 +2,7 @@
 
 A document-layout inference workbench. Upload page images or PDFs, run them on
 the active release, shadow-compare a candidate, check release gates against
-measured quality, and promote or roll back — all on CPU, with every number
+measured quality, and promote or roll back, all on CPU, with every number
 labelled by the host and date it was measured on.
 
 It exists to answer one question honestly: **is this cheaper CPU configuration
@@ -12,8 +12,8 @@ of a layout model safe to ship, and how would I know?**
 
 ## What it actually does
 
-- Serves two open document-layout models — `docling-layout-heron` (RT-DETRv2) and
-  `docling-layout-egret-medium` (D-FINE), both Apache-2.0 — through PyTorch
+- Serves two open document-layout models, `docling-layout-heron` (RT-DETRv2) and
+  `docling-layout-egret-medium` (D-FINE), both Apache-2.0, through PyTorch
   eager and ONNX Runtime.
 - Puts every page on a **durable job ledger** with leases, fencing tokens and a
   reaper, so a worker that is killed mid-batch loses nothing and cannot
@@ -21,7 +21,7 @@ of a layout model safe to ship, and how would I know?**
 - Compares runtimes and preprocessing on **detections**, not just on tensors,
   because a model that agrees numerically can still disagree on boxes.
 - **Refuses to promote** a candidate unless it holds quality on frozen,
-  versioned, generated evaluation sets — and shows which gate blocked it.
+  versioned, generated evaluation sets, and shows which gate blocked it.
 - Reports **queue-inclusive and service latency separately, always labelled**,
   because a single unnamed latency number is how a benchmark misleads.
 - Admits work using a **calibrated memory model**, and reports when the model is
@@ -60,7 +60,7 @@ Full instructions, including the compose stack, are in
 ## Honest results
 
 Measured on an Apple M5 (4P+6E), macOS 27.0.1, torch 2.14.1 (CPU), ORT 1.30.0, with
-the protocol run on battery power and Low Power Mode on — conditions the
+the protocol run on battery power and Low Power Mode on, conditions the
 benchmark refuses by default, recorded in the report for that reason.
 
 | Configuration | pages/s (median of 3 trials) | queue-inclusive p95 |
@@ -80,7 +80,7 @@ sample files every number is read from.
 ### Both runtimes are CPU-only, deliberately
 
 The comparison above is only fair if both sides carry the same kind of build. On
-Linux, `uv.lock` resolves torch to `2.14.1+cpu` rather than PyPI's CUDA wheel —
+Linux, `uv.lock` resolves torch to `2.14.1+cpu` rather than PyPI's CUDA wheel,
 because initialising a CUDA context reserves host memory that has nothing to do
 with the model, and a CUDA torch would have inflated the torch pool's peak RSS
 while the ONNX pool's figure stayed honest. That is the measurement this project
@@ -92,7 +92,7 @@ torch at all).
 The design assumed peak RSS grows as `M0 + b × m_item`. It does not, here. RSS is
 a high-water mark that neither Python nor either runtime returns to the OS, so
 once a large batch has run, every smaller batch shows **zero** marginal cost and
-the least-squares fit produces a **negative intercept** — a model claiming memory
+the least-squares fit produces a **negative intercept**, a model claiming memory
 is released as the batch shrinks, which is impossible.
 
 Calibration now detects that, reports itself invalid, and falls back to the
@@ -103,7 +103,7 @@ would have been operating on fiction while reporting a number.
 
 ![Admission: predicted vs observed peak RSS](data/reports/report-2026-10-05.svg)
 
-Measured marginal peak per batch size, against what the fit predicted (dashed —
+Measured marginal peak per batch size, against what the fit predicted (dashed,
 the fit is not usable). Batch sizes 1 through 4 cost **80 KB, 0 and 0**, and only
 `b=8` moves, at 129 MB. The dashed fit starts *below* zero, which is the
 arithmetic saying out loud that it cannot be a memory model.
@@ -158,7 +158,7 @@ Five processes, and the split is the design rather than an accident:
 Each page is a durable row. Workers claim with `FOR UPDATE SKIP LOCKED`, hold a
 lease, and may only write their result while their **fencing token** still
 matches. A worker paused past its lease, which lost the item to the reaper and
-then woke up, is refused — its `complete()` matches zero rows.
+then woke up, is refused. Its `complete()` matches zero rows.
 
 At-most-once does **not** depend on `SKIP LOCKED`. That is a contention
 optimisation. The guarantee comes from the fencing compare-and-set and from
@@ -192,7 +192,7 @@ make test-all
 `PG_DIR` is unset by default and should stay that way on an ephemeral host: the
 database is recreated on every start, which costs nothing because the suite drops
 and recreates the schema itself. Persisting PGDATA looks like the obvious win and
-is not — on a FUSE-backed persistent folder PostgreSQL comes back with its tables
+is not: on a FUSE-backed persistent folder PostgreSQL comes back with its tables
 intact and then refuses to start. See
 [docs/runbook.md](docs/runbook.md) for the host this was developed against and
 the exact failure.
@@ -200,7 +200,7 @@ the exact failure.
 The suite is written against final state, not HTTP 200. `AT-3` asserts that a
 zombie's `complete()`, `fail()` and `mark_cancelled()` all return `False` and
 that no second prediction exists. `AT-13` asserts the deliberately-degraded 320px
-candidate is actually *blocked* — a gate suite that stopped blocking bad
+candidate is actually *blocked*. A gate suite that stopped blocking bad
 candidates would be worse than one that never existed, because it would let them
 through silently.
 
@@ -211,13 +211,13 @@ naive implementation would satisfy while being wrong:
 | | what a naive version does | what is asserted |
 |---|---|---|
 | `AT-20` | stamps `claimed_at` at receipt | a deliberate 1.2 s queue wait appears in queue-inclusive latency and is absent from service, and the difference equals the wait |
-| `AT-5` | raises `Cancelled` for both runtimes | ORT returns in 4% of the baseline (real `RunOptions.terminate`); torch returns in 103% — it finished the forward pass and dropped the result |
+| `AT-5` | raises `Cancelled` for both runtimes | ORT returns in 4% of the baseline (real `RunOptions.terminate`); torch returns in 103%: it finished the forward pass and dropped the result |
 | `AT-6` | admits the requested batch | a budget sized for two items admits exactly two, with the safety margin visibly reducing it |
 | `AT-7` | clamps an oversized batch to 1 | `admit()` returns 0 to *refuse*, and the worker survives to run the next item |
 | `AT-21` | measures on battery anyway | refusal carries an actionable reason, the override still works, and a mismatched library version refuses the comparison |
 
 `AT-5` is the one worth reading. Both runtimes raise the same exception, so the
-exception alone cannot tell them apart — the difference is only visible as wall
+exception alone cannot tell them apart. The difference is only visible as wall
 time, which is why the pair of tests is written against a measured baseline
 rather than against the return value.
 

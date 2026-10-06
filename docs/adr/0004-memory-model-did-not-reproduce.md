@@ -43,8 +43,8 @@ monotonic in the largest batch size seen so far: once a batch of 8 has run, the
 peak for a batch of 1 is simply the peak that the batch of 8 already set.
 
 Measuring batch sizes in ascending order against a cold baseline therefore does
-not measure the cost of a batch. It measures a staircase — the first measurement
-of each shape keeps every earlier high-water mark — and no straight line fits a
+not measure the cost of a batch. It measures a staircase, because the first
+measurement of each shape keeps every earlier high-water mark, and no straight line fits a
 staircase whose first three rungs are flat.
 
 The design's model implicitly assumes memory is released as the batch shrinks. It

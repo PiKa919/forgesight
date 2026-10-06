@@ -116,7 +116,7 @@ Every number states its unit, its configuration, its statistic and its n.
 A speedup sentence is emitted only between stable configurations measured in
 the same run with the same environment manifest, and always carries its interval.
 If a comparison is not permitted, the report says so rather than omitting it
-silently — a reader can tell the difference between "no difference was found" and
+silently. A reader can tell the difference between "no difference was found" and
 "no comparison was made".
 
 No number is carried over from a model card, a paper or an issue report.

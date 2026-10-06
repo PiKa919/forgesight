@@ -43,7 +43,7 @@ because both live in the schema:
 | Duplicate result | `UNIQUE` constraint | same |
 | Lease expiry | reaper | same |
 
-The concurrency-sensitive properties are enforced in one place — the ledger — and
+The concurrency-sensitive properties are enforced in one place, the ledger, and
 the only per-dialect code is the claim statement's locking clause.
 
 ## Why this was worth doing
@@ -68,7 +68,7 @@ only appears on SQLite is still a bug, and this arrangement means it cannot hide
   PostgreSQL remains the deployment engine and the compose default.
 - The translation is a regex pass over the migration. It is covered by
   `tests/integration/test_ledger.py`, which creates the schema on both and then
-  asserts the constraints the ledger depends on are actually enforced — the
+  asserts the constraints the ledger depends on are actually enforced. The
   composite foreign keys, and the prediction uniqueness.
 
 ## A related bug this arrangement caught
@@ -81,7 +81,7 @@ useless on SQLite.
 
 Timestamps are now supplied by the application, which keeps sub-second
 resolution on both. `tests/integration/test_ledger.py` pins it, and asserts that
-service time can never exceed queue-inclusive time — the invariant that the
+service time can never exceed queue-inclusive time, the invariant that the
 whole latency story depends on.
 
 ## The bug the ledger tests could not catch
@@ -99,7 +99,7 @@ psycopg.ProgrammingError: the query has 0 placeholders but 2 parameters were pas
 ```
 
 psycopg counts `?` as zero placeholders, so the error does not name the query or
-the statement — it looks like a parameter-count bug rather than a dialect
+the statement. It looks like a parameter-count bug rather than a dialect
 mismatch.
 
 ### Decision
@@ -114,8 +114,8 @@ review step that catches a silently shifted argument list. A translation at the
 boundary cannot mis-order parameters, and the next route written with `?` is
 correct for free.
 
-The alternative — requiring every caller to ask the dialect for its placeholder,
-as `WorkspaceRepo` does with `self.ph` — puts the burden on every future caller
+The alternative, requiring every caller to ask the dialect for its placeholder
+as `WorkspaceRepo` does with `self.ph`, puts the burden on every future caller
 and relies on them knowing to. Both styles coexist: `ph()` still exists for code
 that interpolates, and statements that already emit the right placeholder are
 untouched by the rewrite.
