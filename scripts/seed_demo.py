@@ -77,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
                 break
 
     q = f"?shadow_candidate_id={shadow_id}" if shadow_id else ""
+    # Declared, not inferred. Every page above came from this repository's
+    # generator, so saying so is simply true -- and before the API had a way to
+    # record it, the demo's own pages were stored with synthetic = FALSE, which
+    # made this script's docstring and the README's SYNTHETIC claim untrue.
     r = client.post(f"/v1/batches{q}", files=files,
+                    data={"synthetic": "true"},
                     headers={"Authorization": f"Bearer {token}"})
     if r.status_code != 202:
         print(r.text[:800], file=sys.stderr)

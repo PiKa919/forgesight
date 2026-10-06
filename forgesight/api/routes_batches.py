@@ -18,7 +18,16 @@ import json
 from typing import Annotated
 
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from PIL import Image
 
 from forgesight.api.deps import Principal, get_pool_singleton, operator
@@ -71,8 +80,17 @@ async def create_batch(
     files: Annotated[list[UploadFile], File()],
     p: Principal = Depends(operator),
     shadow_candidate_id: str | None = None,
+    synthetic: Annotated[bool, Form()] = False,
 ) -> BatchOut:
-    """Accept a page batch. The first page's release is pinned for the batch."""
+    """Accept a page batch. The first page's release is pinned for the batch.
+
+    `synthetic` is the uploader's *declaration*, recorded as given. The API
+    receives opaque bytes and cannot verify where they came from, so it does not
+    pretend to: it stores the claim and the caller is responsible for it being
+    true. This matters because the flag is what the rest of the system reads to
+    label data, and a flag nobody can set is a flag that is always false --
+    which is exactly what it was before this parameter existed.
+    """
     s = get_settings()
     r = repo()
     st = store()
@@ -130,7 +148,8 @@ async def create_batch(
     staged: list[dict] = []
     for f in files:
         data = await f.read()
-        staged.append(_stage(s, r, st, p.workspace_id, f.filename or "upload", data))
+        staged.append(_stage(s, r, st, p.workspace_id, f.filename or "upload", data,
+                             synthetic))
 
     total_pages = sum(len(x["pages"]) for x in staged)
     if total_pages > s.max_pages_per_batch:
@@ -154,7 +173,8 @@ async def create_batch(
     return _batch_out(r, p.workspace_id, batch_id)
 
 
-def _stage(s, r: WorkspaceRepo, st, ws: str, filename: str, data: bytes) -> dict:
+def _stage(s, r: WorkspaceRepo, st, ws: str, filename: str, data: bytes,
+           synthetic: bool = False) -> dict:
     """Validate one upload and persist its asset and page rows.
 
     Raises ValidationError subclasses as 4xx rather than letting them become a
@@ -171,8 +191,7 @@ def _stage(s, r: WorkspaceRepo, st, ws: str, filename: str, data: bytes) -> dict
 
     sha = hashlib.sha256(data).hexdigest()
     pages: list[dict] = []
-    synthetic = False
-    provenance = f"upload:{filename}"
+    provenance = f"synthetic-upload:{filename}" if synthetic else f"upload:{filename}"
 
     if res.kind is MediaKind.PDF:
         try:
@@ -186,14 +205,15 @@ def _stage(s, r: WorkspaceRepo, st, ws: str, filename: str, data: bytes) -> dict
                 raise HTTPException(_status_for(exc), exc.detail) from exc
             pages.append({"rgb": rgb, "index": i})
         asset_id = _ensure_asset(r, st, ws, sha, data, "application/pdf",
-                                 info.page_count, provenance, False)
+                                 info.page_count, provenance, synthetic)
     else:
         try:
             v = validate_image(data, s)
         except ValidationError as exc:
             raise HTTPException(_status_for(exc), exc.detail) from exc
         pages.append({"rgb": v.rgb, "index": 0, "normalized": v.normalized})
-        asset_id = _ensure_asset(r, st, ws, sha, data, res.kind.value, 1, provenance, False)
+        asset_id = _ensure_asset(r, st, ws, sha, data, res.kind.value, 1, provenance,
+                                 synthetic)
 
     stored: list[dict] = []
     for entry in pages:
