@@ -2,10 +2,22 @@ import type { ReactElement } from "react";
 /** Batches view: upload, watch, inspect. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  UploadCloud,
+  FileText,
+  Clock,
+  XCircle,
+  Loader2,
+  Layers,
+} from "lucide-react";
 import { api, ApiError } from "../api/client";
 import type { Batch, Candidate, WorkItem } from "../api/client";
 import { PageViewer } from "./PageViewer";
 import { BatchCounts, ErrorBox, StatusPill, TimingPanel } from "./primitives";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { cn } from "../lib/utils";
 
 const POLL_MS = 1000;
 
@@ -117,98 +129,205 @@ export function BatchesView({ onChanged }: { onChanged: () => void }): ReactElem
   };
 
   return (
-    <div className="grid two">
-      <div className="stack">
-        <div className="panel">
-          <h2>Upload pages</h2>
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDrag(true);
-            }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDrag(false);
-              void upload(Array.from(e.dataTransfer.files));
-            }}
-            onClick={() => fileInput.current?.click()}
-            style={{
-              border: `1px dashed ${drag ? "var(--accent)" : "var(--line)"}`,
-              borderRadius: 6,
-              padding: "22px 14px",
-              textAlign: "center",
-              cursor: "pointer",
-              background: drag ? "var(--panel-2)" : "transparent",
-            }}
-          >
-            <div className="dim">Drop page images or PDFs here</div>
-            <div className="faint">PNG, JPEG, WebP, TIFF or unencrypted PDF</div>
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              accept=".png,.jpg,.jpeg,.webp,.tif,.tiff,.pdf"
-              style={{ display: "none" }}
-              onChange={(e) => {
-                void upload(Array.from(e.target.files ?? []));
-                e.target.value = "";
-              }}
-            />
-          </div>
-
-          <div className="row" style={{ marginTop: 10 }}>
-            <label className="faint" style={{ whiteSpace: "nowrap" }}>
-              shadow candidate
-            </label>
-            <select value={shadow} onChange={(e) => setShadow(e.target.value)}>
-              <option value="">none</option>
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {busy ? <p className="faint">uploading…</p> : null}
-        </div>
-
-        <div className="panel">
-          <h2>Batches</h2>
-          {batches.length === 0 ? (
-            <p className="faint">no batches yet</p>
-          ) : (
-            <div className="list">
-              {batches.map((b) => (
-                <button
-                  key={b.id}
-                  aria-current={b.id === selected}
-                  onClick={() => {
-                    setSelected(b.id);
-                    setActiveItem(null);
-                  }}
-                >
-                  <div className="row">
-                    <StatusPill status={b.status} />
-                    <span className="mono faint">{b.id.slice(0, 12)}</span>
-                    <span className="spacer" />
-                    <span className="faint">{b.candidate_name}</span>
-                  </div>
-                  <div className="faint">
-                    {b.total_items} pages ·{" "}
-                    {new Date(b.created_at).toLocaleTimeString()}
-                    {b.synthetic ? " · synthetic" : ""}
-                  </div>
-                </button>
-              ))}
+    <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 items-start">
+      <div className="space-y-4">
+        {/* Upload Card */}
+        <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
+          <CardHeader className="pb-3 pt-5 px-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UploadCloud className="size-4 text-sky-400" />
+                <CardTitle className="text-sm font-semibold tracking-tight text-zinc-100">
+                  Upload Pages
+                </CardTitle>
+              </div>
+              {busy && (
+                <span className="flex items-center gap-1.5 text-xs text-sky-400 font-mono animate-pulse">
+                  <Loader2 className="size-3 animate-spin" />
+                  Uploading…
+                </span>
+              )}
             </div>
-          )}
-        </div>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 space-y-4">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDrag(true);
+              }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDrag(false);
+                void upload(Array.from(e.dataTransfer.files));
+              }}
+              onClick={() => fileInput.current?.click()}
+              className={cn(
+                "group relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200",
+                drag
+                  ? "border-sky-500 bg-sky-500/5 shadow-inner"
+                  : "border-zinc-700/80 bg-zinc-950/40 hover:border-zinc-500 hover:bg-zinc-900/40"
+              )}
+            >
+              <div
+                className={cn(
+                  "flex size-11 items-center justify-center rounded-full transition-transform group-hover:scale-105",
+                  drag
+                    ? "bg-sky-500/20 text-sky-400"
+                    : "bg-zinc-800/80 text-zinc-400 group-hover:text-zinc-200"
+                )}
+              >
+                <UploadCloud className="size-5" />
+              </div>
+
+              <div className="mt-3 text-xs text-zinc-300 font-medium">
+                <span>Drag & drop files or </span>
+                <span className="text-sky-400 hover:text-sky-300 underline underline-offset-2">
+                  browse
+                </span>
+              </div>
+
+              <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
+                {["PDF", "PNG", "JPEG", "WEBP"].map((fmt) => (
+                  <Badge
+                    key={fmt}
+                    variant="outline"
+                    className="border-zinc-800 bg-zinc-900/80 px-1.5 py-0 text-[10px] font-mono text-zinc-400 tracking-wider"
+                  >
+                    {fmt}
+                  </Badge>
+                ))}
+              </div>
+
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                accept=".png,.jpg,.jpeg,.webp,.tif,.tiff,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  void upload(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <label className="text-xs font-medium text-zinc-400 shrink-0">
+                Shadow candidate
+              </label>
+              <select
+                value={shadow}
+                onChange={(e) => setShadow(e.target.value)}
+                className="bg-zinc-900 border-zinc-700 text-zinc-100 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 transition-colors w-full max-w-[200px]"
+              >
+                <option value="">none</option>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Batches List Card */}
+        <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
+          <CardHeader className="p-4 sm:p-5 pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="size-4 text-sky-400" />
+                <CardTitle className="text-sm font-semibold tracking-tight text-zinc-100">
+                  Batches
+                </CardTitle>
+              </div>
+              <Badge
+                variant="outline"
+                className="border-zinc-700/60 bg-zinc-900/80 text-[11px] font-mono text-zinc-400"
+              >
+                {batches.length}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-5 pt-0">
+            {batches.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-zinc-800/80 p-8 text-center text-xs text-zinc-500">
+                no batches yet
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                {batches.map((b) => {
+                  const isSelected = b.id === selected;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      aria-current={isSelected}
+                      onClick={() => {
+                        setSelected(b.id);
+                        setActiveItem(null);
+                      }}
+                      className={cn(
+                        "w-full text-left rounded-lg border p-3 transition-all cursor-pointer flex flex-col gap-2.5",
+                        isSelected
+                          ? "border-sky-500/70 bg-zinc-900/90 shadow-sm ring-1 ring-sky-500/30 text-zinc-100"
+                          : "border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700 hover:bg-zinc-800/50 text-zinc-300"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <StatusPill status={b.status} />
+                          <span className="font-mono text-xs text-zinc-200 font-medium truncate">
+                            {b.id.slice(0, 12)}
+                          </span>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="border-zinc-700/60 bg-zinc-900/70 text-[11px] font-mono text-zinc-300 shrink-0"
+                        >
+                          {b.total_items} {b.total_items === 1 ? "page" : "pages"}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] font-mono text-zinc-300 bg-zinc-800/90 px-1.5 py-0 truncate"
+                          >
+                            {b.candidate_name}
+                          </Badge>
+                          {b.synthetic && (
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] font-medium text-purple-400 border border-purple-500/20 bg-purple-500/10 px-1.5 py-0"
+                            >
+                              synthetic
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-500 shrink-0">
+                          <Clock className="size-3 text-zinc-500" />
+                          {new Date(b.created_at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <ErrorBox error={error} />
       </div>
 
-      <div className="stack">
+      <div className="space-y-4">
         {selected ? (
           <>
             <BatchHeader
@@ -216,124 +335,159 @@ export function BatchesView({ onChanged }: { onChanged: () => void }): ReactElem
               onCancel={() => void cancel(selected)}
               busy={busy}
             />
-            <div className="panel">
-              <div className="row wrap" style={{ marginBottom: 8 }}>
-                <span className="faint">items</span>
-                {hasShadow ? (
-                  <>
-                    <label className="row" style={{ gap: 4 }}>
-                      <input
-                        type="checkbox"
-                        checked={showActive}
-                        onChange={(e) => setShowActive(e.target.checked)}
-                        style={{ width: "auto" }}
-                      />
-                      <span className="faint">active</span>
-                    </label>
-                    <label className="row" style={{ gap: 4 }}>
-                      <input
-                        type="checkbox"
-                        checked={showShadow}
-                        onChange={(e) => setShowShadow(e.target.checked)}
-                        style={{ width: "auto" }}
-                      />
-                      <span className="faint">shadow</span>
-                    </label>
-                    <label className="row" style={{ gap: 4 }}>
-                      <input
-                        type="checkbox"
-                        checked={showDiff}
-                        onChange={(e) => setShowDiff(e.target.checked)}
-                        style={{ width: "auto" }}
-                      />
-                      <span className="faint">diff</span>
-                    </label>
-                  </>
-                ) : null}
-              </div>
 
-              <div className="grid two" style={{ gridTemplateColumns: "190px 1fr" }}>
-                <div className="list">
-                  {items.length === 0 ? (
-                    <p className="faint" style={{ padding: 8 }}>
-                      no items
-                    </p>
-                  ) : (
-                    items.map((it) => (
-                      <button
-                        key={it.id}
-                        aria-current={(current?.id ?? "") === it.id}
-                        onClick={() => setActiveItem(it.id)}
-                      >
-                        <div className="row">
-                          <span
-                            className="pill"
-                            style={{
-                              color: stateColor(it.state),
-                              borderColor: stateColor(it.state),
-                            }}
-                          >
-                            {it.state}
-                          </span>
-                          {it.role === "shadow" ? (
-                            <span className="pill info">shadow</span>
-                          ) : null}
-                        </div>
-                        <div className="faint">
-                          {it.detections.length} boxes
-                          {it.timings.service_ms
-                            ? ` · ${it.timings.service_ms.toFixed(0)} ms`
-                            : ""}
-                        </div>
-                      </button>
-                    ))
+            <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
+              <CardHeader className="p-4 sm:p-5 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Layers className="size-4 text-sky-400" />
+                    <CardTitle className="text-sm font-semibold tracking-tight text-zinc-100">
+                      Page Items
+                    </CardTitle>
+                    <Badge
+                      variant="outline"
+                      className="border-zinc-700/60 bg-zinc-900/80 text-[11px] font-mono text-zinc-400"
+                    >
+                      {items.length}
+                    </Badge>
+                  </div>
+
+                  {hasShadow && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-zinc-500 font-medium">Layers:</span>
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={showActive}
+                          onChange={(e) => setShowActive(e.target.checked)}
+                          className="rounded border-zinc-700 bg-zinc-900 text-sky-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
+                        />
+                        <span>active</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={showShadow}
+                          onChange={(e) => setShowShadow(e.target.checked)}
+                          className="rounded border-zinc-700 bg-zinc-900 text-purple-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
+                        />
+                        <span>shadow</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={showDiff}
+                          onChange={(e) => setShowDiff(e.target.checked)}
+                          className="rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
+                        />
+                        <span>diff</span>
+                      </label>
+                    </div>
                   )}
                 </div>
-
-                {current ? (
-                  <div className="stack">
-                    <PageViewer
-                      item={current}
-                      imageUrl={current.image_url}
-                      showActive={showActive}
-                      showShadow={showShadow && hasShadow}
-                      showDiff={showDiff && hasShadow}
-                      threshold={threshold}
-                      maxWidth={760}
-                      onThresholdChange={setThreshold}
-                    />
-                    <TimingPanel t={current.timings} title="Per-item timing" />
-                    {current.failure_code ? (
-                      <div className="error">
-                        {current.failure_code}
-                        {current.failure_detail ? `: ${current.failure_detail}` : ""}
+              </CardHeader>
+              <CardContent className="p-4 sm:p-5 pt-0">
+                <div className="flex flex-col md:flex-row gap-4 items-start">
+                  <div className="w-full md:w-[210px] shrink-0 space-y-1.5 max-h-[64vh] overflow-y-auto pr-1">
+                    {items.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+                        no items
                       </div>
-                    ) : null}
+                    ) : (
+                      items.map((it, idx) => {
+                        const isCurrent = (current?.id ?? "") === it.id;
+                        return (
+                          <button
+                            key={it.id}
+                            type="button"
+                            aria-current={isCurrent}
+                            onClick={() => setActiveItem(it.id)}
+                            className={cn(
+                              "w-full text-left rounded-lg border p-2.5 transition-all cursor-pointer flex flex-col gap-1.5",
+                              isCurrent
+                                ? "border-sky-500/70 bg-zinc-900/90 shadow-sm ring-1 ring-sky-500/30 text-zinc-100"
+                                : "border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700 hover:bg-zinc-800/50 text-zinc-300"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold tracking-tight">
+                                Page {idx + 1}
+                              </span>
+                              <StatusPill status={it.state} className="scale-90 origin-right" />
+                            </div>
+                            <div className="flex items-center justify-between gap-1 text-[11px] text-zinc-400">
+                              <span className="font-mono text-zinc-400">
+                                {it.detections.length}{" "}
+                                {it.detections.length === 1 ? "box" : "boxes"}
+                              </span>
+                              {it.timings.service_ms ? (
+                                <span className="font-mono tabular-nums text-zinc-500">
+                                  {it.timings.service_ms.toFixed(0)} ms
+                                </span>
+                              ) : null}
+                            </div>
+                            {it.role === "shadow" && (
+                              <div className="flex items-center gap-1">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] px-1.5 py-0 text-purple-400 bg-purple-500/10 border-purple-500/20 font-mono"
+                                >
+                                  shadow
+                                </Badge>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
-                ) : (
-                  <p className="hint">select an item to see its boxes and timings</p>
-                )}
-              </div>
-            </div>
+
+                  <div className="flex-1 min-w-0 w-full">
+                    {current ? (
+                      <div className="space-y-4">
+                        <PageViewer
+                          item={current}
+                          imageUrl={current.image_url}
+                          showActive={showActive}
+                          showShadow={showShadow && hasShadow}
+                          showDiff={showDiff && hasShadow}
+                          threshold={threshold}
+                          maxWidth={760}
+                          onThresholdChange={setThreshold}
+                        />
+                        <TimingPanel t={current.timings} title="Per-item timing" />
+                        {current.failure_code && (
+                          <div className="rounded-md border border-red-500/20 bg-red-500/10 p-3 text-xs font-mono text-red-400">
+                            <span className="font-semibold">{current.failure_code}</span>
+                            {current.failure_detail ? `: ${current.failure_detail}` : ""}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-zinc-800 text-xs text-zinc-500">
+                        select an item to see its boxes and timings
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </>
         ) : (
-          <div className="panel">
-            <p className="hint">
-              Upload a batch, or pick one from the list, to see per-page boxes and the
-              timing split.
-            </p>
-          </div>
+          <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
+            <CardContent className="flex flex-col items-center justify-center p-12 text-center space-y-2">
+              <FileText className="size-8 text-zinc-600 mb-1" />
+              <p className="text-sm font-medium text-zinc-400">No Batch Selected</p>
+              <p className="text-xs text-zinc-500 max-w-sm">
+                Upload a batch, or pick one from the list, to see per-page boxes and the
+                timing split.
+              </p>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
   );
-}
-
-function stateColor(state: string): string {
-  if (state === "succeeded") return "var(--ok)";
-  if (state === "failed") return "var(--bad)";
-  if (state === "cancelled") return "var(--warn)";
-  return "var(--accent)";
 }
 
 function BatchHeader({
@@ -346,29 +500,58 @@ function BatchHeader({
   busy: boolean;
 }) {
   if (!batch) return null;
+  const isCancellable = ["queued", "running"].includes(batch.status);
+
   return (
-    <div className="panel">
-      <div className="row wrap">
-        <h2 style={{ margin: 0 }}>batch {batch.id.slice(0, 12)}</h2>
-        <div className="spacer" />
-        <BatchCounts batch={batch} />
-        {["queued", "running"].includes(batch.status) ? (
-          <button className="danger" onClick={onCancel} disabled={busy}>
-            cancel
-          </button>
-        ) : null}
-      </div>
-      <div className="faint" style={{ marginTop: 6 }}>
-        release <span className="mono">{batch.candidate_name}</span> ·{" "}
-        <span className="mono">{batch.release_id.slice(0, 12)}</span>
-        {batch.cancel_requested_at ? " · cancel requested" : ""}
-      </div>
-      {batch.timings ? (
-        <div style={{ marginTop: 10 }}>
-          <TimingPanel t={batch.timings} title="Batch timing (mean of items)" />
+    <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
+      <CardContent className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="text-sm font-semibold tracking-tight text-zinc-100 flex items-center gap-1.5">
+              <span className="text-zinc-400 font-normal">batch</span>
+              <span className="font-mono text-zinc-100">{batch.id.slice(0, 12)}</span>
+            </h2>
+            <StatusPill status={batch.status} />
+            <Badge
+              variant="outline"
+              className="font-mono text-xs text-zinc-300 border-zinc-700/80 bg-zinc-800/40"
+            >
+              {batch.candidate_name}
+            </Badge>
+            <span className="font-mono text-[11px] text-zinc-500">
+              {batch.release_id.slice(0, 12)}
+            </span>
+            {batch.cancel_requested_at && (
+              <Badge variant="warning" className="text-[10px] tracking-tight">
+                cancel requested
+              </Badge>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 self-end sm:self-auto">
+            <BatchCounts batch={batch} />
+            {isCancellable && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onCancel}
+                disabled={busy}
+                className="gap-1.5 text-xs font-medium"
+              >
+                <XCircle className="size-3.5" />
+                Cancel
+              </Button>
+            )}
+          </div>
         </div>
-      ) : null}
-    </div>
+
+        {batch.timings && (
+          <div className="pt-2 border-t border-zinc-800/60">
+            <TimingPanel t={batch.timings} title="Batch timing (mean of items)" />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
