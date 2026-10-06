@@ -32,8 +32,9 @@ echo "[HF Entrypoint] Starting ledger reaper..."
 python -m forgesight.ledger &
 PID_REAPER=$!
 
-echo "[HF Entrypoint] Starting FastAPI on port 7860..."
-uvicorn forgesight.api.app:app --host 0.0.0.0 --port 7860 &
+APP_PORT="${PORT:-7860}"
+echo "[Entrypoint] Starting FastAPI on port ${APP_PORT}..."
+uvicorn forgesight.api.app:app --host 0.0.0.0 --port "${APP_PORT}" &
 PID_API=$!
 
 cleanup() {
