@@ -1,3 +1,13 @@
+---
+title: ForgeSight
+emoji: ⚡
+colorFrom: gray
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # ForgeSight
 
 A document-layout inference workbench. Upload page images or PDFs, run them on
