@@ -53,7 +53,8 @@ RUN useradd --create-home --uid 1000 forgesight \
 
 USER forgesight
 
-ENV FORGESIGHT_MODE=public \
+ENV PYTHONPATH=/srv \
+    FORGESIGHT_MODE=public \
     FORGESIGHT_DATA_DIR=/data \
     FORGESIGHT_MODELS_DIR=/models \
     FORGESIGHT_ARTIFACTS_DIR=/artifacts \

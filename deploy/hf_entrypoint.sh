@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+export PYTHONPATH="/srv:${PYTHONPATH:-}"
+cd /srv
+
 export FORGESIGHT_MODE="public"
 export FORGESIGHT_DATABASE_URL="sqlite:////data/forgesight.db"
 export FORGESIGHT_DATA_DIR="/data"
