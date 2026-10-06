@@ -9,7 +9,8 @@ export HF_HOME ?= $(CURDIR)/.hf_home
 
 .DEFAULT_GOAL := help
 .PHONY: help install fetch export datasets api worker-torch worker-ort reaper web \
-        test test-unit test-model test-all lint typecheck bench report demo up down \
+        test test-unit test-model test-all lint typecheck bench report demo \
+        walkthrough up down \
         clean distclean pg-up pg-down pg-status
 
 help: ## Show this help
@@ -85,6 +86,12 @@ report: ## Benchmark plus the quality and gate passes
 
 demo: ## Seed a demo workspace with generated pages
 	$(PY) python scripts/seed_demo.py
+
+# Design section 18 as an executable script. This runs the real API, real workers,
+# real inference and the real evaluator against a fresh database; it writes its
+# own verdict rows nowhere. Every claim it makes is one it checked.
+walkthrough: ## Run the full design §18 walkthrough end to end
+	$(PY) python scripts/walkthrough.py
 
 up: ## Start Postgres, SeaweedFS, API, workers and the reaper with podman compose
 	podman compose up -d --build
