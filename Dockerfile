@@ -45,9 +45,16 @@ COPY --from=web /web/dist ./web/dist
 COPY deploy/hf_entrypoint.sh /srv/hf_entrypoint.sh
 RUN chmod +x /srv/hf_entrypoint.sh
 
-# HF Spaces runs as non-root UID 1000.
+# Pre-fetch models and export ONNX during build where build-host memory is ample
+ENV PYTHONPATH=/srv \
+    FORGESIGHT_MODELS_DIR=/models \
+    FORGESIGHT_ARTIFACTS_DIR=/artifacts
+RUN mkdir -p /data /models /artifacts \
+ && python scripts/fetch_models.py \
+ && (python scripts/export_models.py || true)
+
+# HF Spaces / Railway non-root UID 1000.
 RUN useradd --create-home --uid 1000 forgesight \
- && mkdir -p /data /models /artifacts \
  && chown -R forgesight:forgesight /srv /data /models /artifacts \
  && chmod -R 777 /data /models /artifacts
 
@@ -59,7 +66,17 @@ ENV PYTHONPATH=/srv \
     FORGESIGHT_MODELS_DIR=/models \
     FORGESIGHT_ARTIFACTS_DIR=/artifacts \
     FORGESIGHT_DATABASE_URL="sqlite:////data/forgesight.db" \
-    FORGESIGHT_OBJECT_STORE=fs
+    FORGESIGHT_OBJECT_STORE=fs \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    VECLIB_MAXIMUM_THREADS=1 \
+    FORGESIGHT_WORKER_THREADS=1 \
+    FORGESIGHT_MAX_BATCH=1 \
+    FORGESIGHT_CLAIM_BATCH=2 \
+    FORGESIGHT_PREFETCH_QUEUE_DEPTH=1 \
+    FORGESIGHT_MODEL_CACHE_SIZE=1
 
-EXPOSE 7860
+EXPOSE 8080 7860
 CMD ["/srv/hf_entrypoint.sh"]
