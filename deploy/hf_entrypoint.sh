@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+export FORGESIGHT_MODE="public"
 export FORGESIGHT_DATABASE_URL="sqlite:////data/forgesight.db"
 export FORGESIGHT_DATA_DIR="/data"
 export FORGESIGHT_MODELS_DIR="/models"
 export FORGESIGHT_ARTIFACTS_DIR="/artifacts"
-export FORGESIGHT_OBJECT_STORE="file"
+export FORGESIGHT_OBJECT_STORE="fs"
 
 mkdir -p /data /models /artifacts
 

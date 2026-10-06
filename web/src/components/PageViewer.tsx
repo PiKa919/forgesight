@@ -219,7 +219,7 @@ export function PageViewer({
     if (shadowLocal) {
       pool.push(...item.shadow_detections.filter((d) => d.score >= threshold));
     }
-    const source = pool.length > 0 ? pool : item.detections.filter((d) => d.score >= threshold);
+    const source = (activeLocal || shadowLocal) ? pool : [];
     for (const d of source) {
       counts.set(d.label, (counts.get(d.label) ?? 0) + 1);
     }

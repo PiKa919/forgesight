@@ -53,11 +53,12 @@ RUN useradd --create-home --uid 1000 forgesight \
 
 USER forgesight
 
-ENV FORGESIGHT_DATA_DIR=/data \
+ENV FORGESIGHT_MODE=public \
+    FORGESIGHT_DATA_DIR=/data \
     FORGESIGHT_MODELS_DIR=/models \
     FORGESIGHT_ARTIFACTS_DIR=/artifacts \
     FORGESIGHT_DATABASE_URL="sqlite:////data/forgesight.db" \
-    FORGESIGHT_OBJECT_STORE=file
+    FORGESIGHT_OBJECT_STORE=fs
 
 EXPOSE 7860
 CMD ["/srv/hf_entrypoint.sh"]

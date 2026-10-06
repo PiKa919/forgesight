@@ -338,7 +338,7 @@ export function BatchesView({ onChanged }: { onChanged: () => void }): ReactElem
 
             <Card className="border-zinc-800 bg-zinc-900/60 shadow-sm backdrop-blur-sm">
               <CardHeader className="p-4 sm:p-5 pb-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Layers className="size-4 text-sky-400" />
                     <CardTitle className="text-sm font-semibold tracking-tight text-zinc-100">
@@ -351,39 +351,6 @@ export function BatchesView({ onChanged }: { onChanged: () => void }): ReactElem
                       {items.length}
                     </Badge>
                   </div>
-
-                  {hasShadow && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-zinc-500 font-medium">Layers:</span>
-                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={showActive}
-                          onChange={(e) => setShowActive(e.target.checked)}
-                          className="rounded border-zinc-700 bg-zinc-900 text-sky-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
-                        />
-                        <span>active</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={showShadow}
-                          onChange={(e) => setShowShadow(e.target.checked)}
-                          className="rounded border-zinc-700 bg-zinc-900 text-purple-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
-                        />
-                        <span>shadow</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={showDiff}
-                          onChange={(e) => setShowDiff(e.target.checked)}
-                          className="rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-0 focus:ring-offset-0 size-3.5 cursor-pointer"
-                        />
-                        <span>diff</span>
-                      </label>
-                    </div>
-                  )}
                 </div>
               </CardHeader>
               <CardContent className="p-4 sm:p-5 pt-0">
@@ -454,6 +421,9 @@ export function BatchesView({ onChanged }: { onChanged: () => void }): ReactElem
                           threshold={threshold}
                           maxWidth={760}
                           onThresholdChange={setThreshold}
+                          onToggleActive={setShowActive}
+                          onToggleShadow={setShowShadow}
+                          onToggleDiff={setShowDiff}
                         />
                         <TimingPanel t={current.timings} title="Per-item timing" />
                         {current.failure_code && (
