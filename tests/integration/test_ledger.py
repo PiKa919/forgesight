@@ -58,13 +58,26 @@ def pg_pool():
 
 
 def _truncate(pool) -> None:
+    """Empty the data tables, leaving the schema and its migration record intact.
+
+    `schema_migration` and `counter` are excluded on purpose. Truncating them
+    leaves a database whose tables exist but whose migration log claims nothing
+    has been applied -- and the next `migrate()` then tries to create the tables
+    again and dies with DuplicateTable. That is not a test-only problem: it is the
+    state this leaves behind for anything that runs afterwards on the same
+    database, including `scripts/walkthrough.py`.
+    """
+    keep = {"schema_migration", "counter"}
     with pool.connection() as conn:
         names = [
             r["tablename"]
             for r in conn.fetchall(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
             )
+            if r["tablename"] not in keep
         ]
+    if not names:
+        return
     with pool.write() as conn:
         conn.execute(f"TRUNCATE {', '.join(names)} RESTART IDENTITY CASCADE")
 

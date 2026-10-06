@@ -405,10 +405,21 @@ class WorkspaceRepo:
             )
         return _aggregate(rows)
 
-    #: A work item's shadow result is any prediction on the same item whose
-    #: candidate differs from the item's own pinned candidate. A shadow item is
-    #: stored as its own row with role='shadow', so the two are distinguished by
-    #: the join rather than by remembering which id was which.
+    #: A work item's shadow result is the prediction on the SAME PAGE by a
+    #: different candidate.
+    #:
+    #: Joining on `work_item_id` looks right and is always empty. A work item is
+    #: created one per (page, candidate) pair, so the shadow candidate's result
+    #: lives on a *different* work item that shares `page_id`. The old predicate
+    #: -- same work_item_id, different candidate_id -- can therefore never be
+    #: true, and `has_shadow` was permanently false, which left the §18 diff view
+    #: (added / missing / relabelled boxes) rendering nothing at all. Verified
+    #: against a seeded database: the work_item_id join matched 0 rows where the
+    #: page_id join matches 8.
+    #:
+    #: `role = 'shadow'` is the schema's own discriminator and is used as such,
+    #: rather than relying on candidate inequality alone. `batch_id` is included
+    #: so a diff cannot pair a page against a shadow run from another batch.
     _ITEM_SELECT = """
         SELECT w.*, pr.detections AS primary_detections, pr.timings AS primary_timings,
                pr.id IS NOT NULL AS has_primary,
@@ -417,9 +428,14 @@ class WorkspaceRepo:
         LEFT JOIN prediction pr
                ON pr.work_item_id = w.id AND pr.workspace_id = w.workspace_id
               AND pr.candidate_id = w.candidate_id
+        LEFT JOIN work_item s
+               ON s.page_id = w.page_id AND s.workspace_id = w.workspace_id
+              AND s.batch_id = w.batch_id AND s.role = 'shadow'
+              AND s.candidate_id <> w.candidate_id
         LEFT JOIN prediction sr
-               ON sr.work_item_id = w.id AND sr.workspace_id = w.workspace_id
-              AND sr.candidate_id <> w.candidate_id
+               ON sr.work_item_id = s.id
+              AND sr.workspace_id = w.workspace_id
+              AND sr.candidate_id = s.candidate_id
         WHERE w.workspace_id = {ph} AND w.batch_id = {ph}
     """
 
@@ -448,9 +464,13 @@ class WorkspaceRepo:
                 "FROM work_item w "
                 "LEFT JOIN prediction pr ON pr.work_item_id = w.id "
                 "AND pr.candidate_id = w.candidate_id AND pr.workspace_id = w.workspace_id "
-                "LEFT JOIN prediction sr ON sr.work_item_id = w.id "
+                "LEFT JOIN work_item s ON s.page_id = w.page_id "
+                "AND s.workspace_id = w.workspace_id "
+                "AND s.role = 'shadow' "
+                "AND s.candidate_id <> w.candidate_id "
+                "LEFT JOIN prediction sr ON sr.work_item_id = s.id "
                 "AND sr.workspace_id = w.workspace_id "
-                "AND sr.candidate_id <> w.candidate_id "
+                "AND sr.candidate_id = s.candidate_id "
                 f"WHERE w.workspace_id = {self.ph} AND w.id = {self.ph}",
                 (ws, item_id),
             )

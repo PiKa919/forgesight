@@ -23,6 +23,7 @@ import pytest
 
 from forgesight.db.migrate import migrate
 from forgesight.db.pool import Dialect, get_pool
+from forgesight.ledger.claims import new_id
 from forgesight.settings import get_settings, reset_settings
 from tests.support import requires_weights
 
@@ -54,13 +55,24 @@ def pg_pool():
 
 
 def _truncate(pool) -> None:
+    """Empty the data tables, keeping the schema and its migration record.
+
+    See tests/integration/test_ledger.py for why `schema_migration` and `counter`
+    are excluded: truncating them leaves tables that exist but a migration log
+    that says nothing has been applied, and the next migrate() fails with
+    DuplicateTable.
+    """
+    keep = {"schema_migration", "counter"}
     with pool.connection() as conn:
         names = [
             r["tablename"]
             for r in conn.fetchall(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
             )
+            if r["tablename"] not in keep
         ]
+    if not names:
+        return
     with pool.write() as conn:
         conn.execute(f"TRUNCATE {', '.join(names)} RESTART IDENTITY CASCADE")
 
@@ -370,3 +382,133 @@ def test_session_bootstrap_refuses_when_no_models_are_registered(tmp_path, monke
     from forgesight.settings import reset_settings
 
     reset_settings()
+
+
+# -- the shadow diff view ----------------------------------------------------
+
+
+def _register_two_candidates(repo, ws):
+    """Register every candidate the registry can build, and return their ids.
+
+    Returns () when the weights are absent, so the caller can skip rather than
+    assert on an empty registry.
+    """
+    from forgesight.settings import get_settings
+    from forgesight.vision.registry import registry
+
+    class _Row:
+        def __init__(self, i):
+            self.id = i
+
+    ids = []
+    for bc in registry(get_settings()):
+        if repo.find_candidate_by_hash(ws, bc.candidate.hash):
+            ids.append(repo.list_candidates(ws)[0]["id"])
+            continue
+        pp, rt = repo.profiles_for(ws, bc.candidate.artifact, bc.candidate)
+        with repo.pool.connection() as conn:
+            art = conn.fetchone(
+                f"SELECT id FROM model_artifact WHERE workspace_id = {repo.ph} "
+                f"AND sha256 = {repo.ph}",
+                (ws, bc.candidate.artifact.sha256))
+        repo.insert_candidate(
+            ws, bc.name, bc.candidate.hash, _Row(art["id"]), pp, rt,
+            bc.candidate.score_threshold, bc.candidate.label_map_hash,
+            bc.candidate.tile_enabled)
+        found = next(c for c in repo.list_candidates(ws)
+                     if c["candidate_hash"] == bc.candidate.hash)
+        ids.append(found["id"])
+    return tuple(ids[:2])
+
+
+@pytest.mark.model
+def test_a_shadowed_page_reports_its_shadow_result(stack):
+    """Regression: `has_shadow` was permanently false, so the diff view never rendered.
+
+    The shadow join read `sr.work_item_id = w.id AND sr.candidate_id <> w.candidate_id`.
+    A work item is created one per (page, candidate) pair, so the shadow
+    candidate's prediction lives on a *different* work item sharing `page_id`.
+    That predicate could never be true -- verified against a seeded database, the
+    old join matched 0 rows where the page-based join matches every shadowed page.
+
+    The consequence was not a crash. `ItemOut.diff` was simply always None, and
+    design section 18 beat 4 ("the diff view shows added, missing and relabeled
+    boxes") rendered an empty panel. That reads as "no difference found" rather
+    than as a bug, which is why nothing caught it.
+    """
+    from forgesight.api.repo import WorkspaceRepo
+    from forgesight.ledger.claims import Ledger, PredictionIn
+    from forgesight.vision.types import Detection
+
+    client, pool, _repo, ws = stack
+    repo = WorkspaceRepo(pool)
+    pair = _register_two_candidates(repo, ws)
+    if len(pair) < 2:
+        pytest.skip("need at least two registered candidates")
+    primary, shadow = pair
+
+    # batch.release_id has a composite FK to release(workspace_id, id), so a real
+    # release row is required. ensure_channel returns the *channel*, not a
+    # release, which is an easy confusion and produced a foreign-key violation.
+    channel = repo.ensure_channel(ws)
+    release_id = new_id("rel")
+    ph = "?" if pool.dialect is Dialect.SQLITE else "%s"
+    with pool.write() as conn:
+        conn.execute(
+            f"INSERT INTO release(id, workspace_id, channel_id, candidate_id, "
+            f"action, reason, actor, channel_version) "
+            f"VALUES ({','.join([ph] * 8)})",
+            (release_id, ws, channel, primary, "seed", "diff regression",
+             "test", 1))
+
+    asset, page, batch = new_id("as"), new_id("pg"), new_id("b")
+    with pool.write() as conn:
+        conn.execute(
+            f"INSERT INTO batch(id, workspace_id, release_id, shadow_candidate_id, "
+            f"total_items, synthetic) VALUES ({','.join([ph] * 6)})",
+            (batch, ws, release_id, shadow, 2, True))
+        conn.execute(
+            f"INSERT INTO asset(id, workspace_id, sha256, byte_size, media_type, "
+            f"object_key, page_count, provenance, synthetic) "
+            f"VALUES ({','.join([ph] * 9)})",
+            (asset, ws, "diff-sha", 10, "image/png", "k", 1, "synthetic:test", True))
+        # page carries no `synthetic` column; the flag lives on asset and batch.
+        conn.execute(
+            f"INSERT INTO page(id, workspace_id, asset_id, page_index, width_px, "
+            f"height_px, render_dpi, object_key) VALUES ({','.join([ph] * 8)})",
+            (page, ws, asset, 0, 100, 100, 150, "k"))
+
+        # work_item carries pool and role, not the artifact/profile columns --
+        # those live on candidate. `role` is what distinguishes a shadow row.
+        for cid, role, pool_name in ((primary, "primary", "torch"),
+                                     (shadow, "shadow", "onnxruntime")):
+            conn.execute(
+                f"INSERT INTO work_item(id, workspace_id, batch_id, page_id, "
+                f"candidate_id, pool, role) VALUES ({','.join([ph] * 7)})",
+                (new_id("wi"), ws, batch, page, cid, pool_name, role))
+
+    det = PredictionIn([Detection(class_id=0, label="text", score=0.9,
+                                  box=(0.1, 0.1, 0.5, 0.5))])
+    # Both pools: the shadow item is pinned to onnxruntime, and claim() is
+    # pool-scoped, so claiming only "torch" leaves the shadow unpredicted and the
+    # diff empty for a reason that has nothing to do with the join under test.
+    ledger = Ledger(pool)
+    for pool_name in ("torch", "onnxruntime"):
+        for it in ledger.claim(pool_name, "w", n=8, lease_s=60):
+            ledger.complete(it, det)
+
+    # Asserted on `shadow_detections`, not the SQL helper column `has_shadow`:
+    # ItemOut has no such field, so reading it tests the response shape rather
+    # than the join.
+    items = client.get(f"/v1/batches/{batch}/items").json()
+    assert items, "no items returned for the seeded batch"
+    primary_items = [i for i in items if i["role"] == "primary"]
+    assert primary_items, "the primary item is missing from the batch listing"
+    shadowed = [i for i in primary_items if i["shadow_detections"]]
+    assert shadowed, (
+        "the primary item has no shadow_detections; the diff view renders empty"
+    )
+    assert shadowed[0]["diff"], "both sides have boxes, so a diff must be computed"
+
+    detail = client.get(f"/v1/items/{shadowed[0]['id']}").json()
+    assert detail["shadow_detections"], "single-item fetch also lost the shadow"
