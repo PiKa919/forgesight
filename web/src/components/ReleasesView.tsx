@@ -6,18 +6,14 @@ import {
   ShieldCheck,
   AlertCircle,
   CheckCircle2,
-  XCircle,
   RotateCcw,
   Loader2,
   History,
   ArrowRight,
   TrendingUp,
-  Cpu,
-  Server,
-  Layers,
 } from "lucide-react";
 import { api } from "../api/client";
-import type { Candidate, Channel, Evaluation, GateVerdict } from "../api/client";
+import type { Candidate, Channel, Evaluation } from "../api/client";
 import { ErrorBox, bytes } from "./primitives";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -32,6 +28,9 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
   const [promoteReason, setPromoteReason] = useState("");
   const [rollbackReason, setRollbackReason] = useState("");
   const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
+  const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
+  const [evalConfirmCandidate, setEvalConfirmCandidate] = useState<Candidate | null>(null);
+  const [evaluatingCandidateId, setEvaluatingCandidateId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -41,14 +40,15 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
       const [ch, cs] = await Promise.all([api.releases(), api.listCandidates()]);
       setChannel(ch);
       setCandidates(cs);
-      if (cs.length > 0 && cs[0] && !selected) {
-        setSelected(cs[0].id);
+      const firstCandidate = cs[0];
+      if (firstCandidate) {
+        setSelected((prev) => prev ?? firstCandidate.id);
       }
       setError(null);
     } catch (e) {
       setError(e);
     }
-  }, [selected]);
+  }, []);
 
   useEffect(() => {
     void reload();
@@ -56,6 +56,7 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
 
   const evaluate = async (id: string) => {
     setBusy(true);
+    setEvaluatingCandidateId(id);
     setError(null);
     setNote(null);
     try {
@@ -67,6 +68,7 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
       setError(e);
     } finally {
       setBusy(false);
+      setEvaluatingCandidateId(null);
     }
   };
 
@@ -83,6 +85,7 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
       );
       setChannel(r.channel);
       setPromoteReason("");
+      setShowPromoteConfirm(false);
       setNote(`Promoted ${r.release.candidate_name} as version v${r.channel.version}`);
       onChanged();
     } catch (e) {
@@ -122,7 +125,13 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
     <div className="space-y-6">
       {/* Top Notification / Error */}
       <ErrorBox error={error} />
-      {note && (
+      {evaluatingCandidateId && (
+        <div className="flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/10 px-4 py-2.5 text-xs text-sky-300">
+          <Loader2 className="size-4 shrink-0 text-sky-400 animate-spin" />
+          <span>Running benchmark evaluation and testing G1–G6 gates...</span>
+        </div>
+      )}
+      {note && !evaluatingCandidateId && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">
           <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
           <span>{note}</span>
@@ -308,7 +317,10 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
               return (
                 <Card
                   key={c.id}
-                  onClick={() => setSelected(c.id)}
+                  onClick={() => {
+                    setSelected(c.id);
+                    setShowPromoteConfirm(false);
+                  }}
                   className={cn(
                     "cursor-pointer transition-all border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-850/60 shadow-sm",
                     isSelected &&
@@ -405,13 +417,19 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
                           disabled={busy}
                           onClick={(e) => {
                             e.stopPropagation();
-                            void evaluate(c.id);
+                            setEvalConfirmCandidate(c);
                           }}
                         >
-                          {busy && isSelected ? (
-                            <Loader2 className="size-3 animate-spin mr-1" />
-                          ) : null}
-                          {isEvaluated ? "Re-evaluate" : "Evaluate"}
+                          {evaluatingCandidateId === c.id ? (
+                            <>
+                              <Loader2 className="size-3 animate-spin mr-1" />
+                              Evaluating...
+                            </>
+                          ) : isEvaluated ? (
+                            "Re-evaluate"
+                          ) : (
+                            "Evaluate"
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -570,10 +588,16 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
                         size="sm"
                         className="text-xs h-8"
                         disabled={busy}
-                        onClick={() => void evaluate(candidate.id)}
+                        onClick={() => setEvalConfirmCandidate(candidate)}
                       >
-                        {busy ? <Loader2 className="size-3 animate-spin mr-1.5" /> : null}
-                        Evaluate Candidate Now
+                        {evaluatingCandidateId === candidate.id ? (
+                          <>
+                            <Loader2 className="size-3 animate-spin mr-1.5" />
+                            Evaluating...
+                          </>
+                        ) : (
+                          "Evaluate Candidate Now"
+                        )}
                       </Button>
                     </div>
                   )}
@@ -600,26 +624,92 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
                     </div>
                   )}
 
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="text"
-                      placeholder="Reason for audit log (e.g. verified on calibration split)"
-                      value={promoteReason}
-                      onChange={(e) => setPromoteReason(e.target.value)}
-                      disabled={busy || !channel || !allGatesPassed}
-                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
-                    />
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs font-semibold shrink-0"
-                      onClick={() => void promote()}
-                      disabled={busy || !channel || !allGatesPassed}
-                    >
-                      {busy ? <Loader2 className="size-3 animate-spin" /> : <ArrowRight className="size-3.5" />}
-                      Promote to Active
-                    </Button>
-                  </div>
+                  {!showPromoteConfirm ? (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                      <p className="text-xs text-zinc-400">
+                        {allGatesPassed
+                          ? `All release gates passed. Ready to promote ${candidate.name} to channel v${(channel?.version ?? 0) + 1}.`
+                          : "Run and pass all gate criteria to unlock promotion."}
+                      </p>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs font-semibold shrink-0"
+                        onClick={() => setShowPromoteConfirm(true)}
+                        disabled={busy || !channel || !allGatesPassed}
+                      >
+                        <ArrowRight className="size-3.5" />
+                        Promote to Active
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="border border-sky-500/30 bg-sky-950/20 p-4 rounded-lg space-y-3">
+                      <div className="flex items-center justify-between text-xs font-semibold text-sky-300">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="size-4 text-sky-400" />
+                          <span>Confirm Release Promotion</span>
+                        </div>
+                        <Badge variant="info" className="font-mono text-[11px]">
+                          Target Version: v{(channel?.version ?? 0) + 1}
+                        </Badge>
+                      </div>
+
+                      <div className="text-xs text-zinc-300 space-y-1">
+                        <p>
+                          Candidate:{" "}
+                          <span className="font-mono font-semibold text-zinc-100">
+                            {candidate.name}
+                          </span>
+                        </p>
+                        <p className="text-zinc-400">
+                          Promoting will set this candidate as the active model and increment the channel to{" "}
+                          <span className="font-mono text-sky-300">
+                            v{(channel?.version ?? 0) + 1}
+                          </span>
+                          .
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium text-zinc-400">
+                          Reason for Audit Log:
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            placeholder="Reason for audit log (e.g. verified on calibration split)"
+                            value={promoteReason}
+                            onChange={(e) => setPromoteReason(e.target.value)}
+                            disabled={busy}
+                            className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
+                          />
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => setShowPromoteConfirm(false)}
+                              disabled={busy}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-8 text-xs font-semibold"
+                              onClick={() => void promote()}
+                              disabled={busy}
+                            >
+                              {busy ? (
+                                <Loader2 className="size-3 animate-spin mr-1" />
+                              ) : null}
+                              Confirm Promotion
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -633,6 +723,73 @@ export function ReleasesView({ onChanged }: { onChanged: () => void }): ReactEle
           )}
         </div>
       </div>
+
+      {/* Benchmark Evaluation Confirmation Modal */}
+      {evalConfirmCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <TrendingUp className="size-4 text-sky-400" />
+              <span>Confirm Benchmark Evaluation</span>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Run benchmark evaluation suite for candidate{" "}
+              <strong className="text-zinc-100 font-mono">
+                {evalConfirmCandidate.name}
+              </strong>
+              ?
+            </p>
+            <div className="rounded-md border border-zinc-800/80 bg-zinc-950/60 p-3 text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between text-zinc-400">
+                <span>Runtime:</span>
+                <span className="text-zinc-200">{evalConfirmCandidate.runtime}</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Artifact:</span>
+                <span className="text-zinc-200 truncate max-w-[200px]">
+                  {evalConfirmCandidate.artifact_name}
+                </span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Resolution:</span>
+                <span className="text-zinc-200">{evalConfirmCandidate.target}px</span>
+              </div>
+              <div className="flex justify-between text-zinc-400">
+                <span>Threads:</span>
+                <span className="text-zinc-200">{evalConfirmCandidate.threads}</span>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              This evaluates clean quality, shift robustness, latency parity, and memory limits against the pinned reference baseline.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => setEvalConfirmCandidate(null)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white"
+                onClick={() => {
+                  const cand = evalConfirmCandidate;
+                  setEvalConfirmCandidate(null);
+                  void evaluate(cand.id);
+                }}
+                disabled={busy}
+              >
+                {busy ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
+                Start Evaluation
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
