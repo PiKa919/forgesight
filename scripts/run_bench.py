@@ -87,10 +87,15 @@ def main(argv: list[str] | None = None) -> int:
 
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
     out = Path(args.out) if args.out else s.reports_dir / f"report-{stamp}.md"
+    # Plot first: the markdown references the file by name, so it has to exist
+    # and be recorded on the input before `write` renders.
+    fig = report_mod.write_plot(data, out.with_suffix(".svg"))
     report_mod.write(data, out)
     report_mod.write_json(data, out.with_suffix(".json"))
     print(f"\nwrote {out}")
     print(f"wrote {out.with_suffix('.json')}")
+    if fig:
+        print(f"wrote {fig}")
     for r in outcome.refusals:
         print(f"NOTE: protocol would have refused -- {r}")
     return 0

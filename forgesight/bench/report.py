@@ -272,6 +272,15 @@ def build(data: ReportInput) -> str:
             "the measured marginal peak on every batch; the misprediction count "
             "above is that check, reported rather than assumed correct.")
         add("")
+        # Design §15 phase 4 exit criterion. Regenerated with every run rather
+        # than maintained by hand, so the figure cannot drift from the numbers
+        # above it. Name is stable across runs so the markdown reference stays
+        # valid and the file shows as a content diff, not add/delete churn.
+        if marginal:
+            fig = data.memory_model.get("plot_file")
+            if fig:
+                add(f"![Admission: predicted vs observed peak RSS]({fig})")
+                add("")
 
     if data.raw_files:
         add("## Raw samples")
@@ -291,6 +300,35 @@ def build(data: ReportInput) -> str:
         add("")
 
     return "\n".join(lines) + "\n"
+
+
+def write_plot(data: ReportInput, path: Path) -> Path | None:
+    """Write the admission predicted-vs-observed figure. None if there is nothing to draw.
+
+    Called before `write`, so the markdown can reference the file by name. The
+    name is fixed rather than date-stamped: these reports are tracked in git
+    alongside the evidence they cite, and a date in the filename would turn
+    every regeneration into a rename.
+    """
+    m = data.memory_model or {}
+    samples = m.get("samples") or {}
+    if not samples:
+        return None
+    from forgesight.bench.plot import Series, predicted_vs_observed_svg
+
+    svg = predicted_vs_observed_svg([
+        Series(
+            label="egret-medium / onnxruntime",
+            samples={int(k): float(v) for k, v in samples.items()},
+            m0=float(m.get("m0_bytes") or 0.0),
+            m_item=float(m.get("m_item_bytes") or 0.0),
+            valid=bool(m.get("calibration_valid", m.get("valid", True))),
+        )
+    ])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(svg)
+    data.memory_model["plot_file"] = path.name
+    return path
 
 
 def write(data: ReportInput, path: Path) -> Path:
