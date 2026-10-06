@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from fastapi.middleware.cors import CORSMiddleware
 from forgesight.api import routes_batches, routes_releases, routes_reports, routes_sessions
 from forgesight.api.deps import get_pool_singleton
 from forgesight.db.migrate import migrate
@@ -46,6 +47,14 @@ def create_app() -> FastAPI:
             "measured on a labelled host; nothing here is transferred from a model card."
         ),
         lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     app.include_router(routes_sessions.router)

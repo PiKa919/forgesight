@@ -221,6 +221,24 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export function getApiBase(): string {
+  const custom = localStorage.getItem("forgesight.api_url");
+  if (custom) return custom.replace(/\/+$/, "");
+  if (import.meta.env.VITE_API_URL) {
+    return String(import.meta.env.VITE_API_URL).replace(/\/+$/, "");
+  }
+  if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+    return "https://forgesight-production-6891.up.railway.app";
+  }
+  return "";
+}
+
+export function resolveApiUrl(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const base = getApiBase();
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 /** Set once per page load so a bad token cannot cause a reload loop. */
 const RELOAD_GUARD = "forgesight.reloaded-for-auth";
 
@@ -234,7 +252,8 @@ async function request<T>(
   };
   if (init.auth !== false && token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(path, { ...init, headers });
+  const url = resolveApiUrl(path);
+  const res = await fetch(url, { ...init, headers });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   let body: unknown = text;

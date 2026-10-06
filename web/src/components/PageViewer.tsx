@@ -28,7 +28,7 @@ import {
   Tag,
   AlertCircle,
 } from "lucide-react";
-import { authHeaders } from "../api/client";
+import { authHeaders, resolveApiUrl } from "../api/client";
 import type { BoxDiff, Detection, WorkItem } from "../api/client";
 import { Slider } from "./ui/slider";
 import { Badge } from "./ui/badge";
@@ -138,7 +138,7 @@ export function PageViewer({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(imageUrl, { headers: authHeaders() });
+        const res = await fetch(resolveApiUrl(imageUrl), { headers: authHeaders() });
         if (!res.ok) {
           setLoadError(`The page image could not be loaded (HTTP ${res.status})`);
           return;
