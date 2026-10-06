@@ -268,7 +268,7 @@ def _provenance(cand, pool, ws, manifests) -> tuple[bool, str]:
     if not manifests:
         return False, "no evaluation dataset is registered"
     try:
-        verify_artifact(Path(cand.artifact.path), cand.artifact.sha256)
+        verify_artifact(Path(cand.artifact.weights_path), cand.artifact.sha256)
     except Exception as exc:
         return False, f"artifact sha mismatch: {exc}"
     if not cand.artifact.revision or cand.artifact.revision == "main":

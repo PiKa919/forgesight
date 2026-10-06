@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -24,6 +25,7 @@ from forgesight.vision.runtimes.base import (
     ArtifactCorrupt,
     OrtModel,
     TorchModel,
+    file_sha256,
     verify_artifact,
 )
 from forgesight.vision.types import Cancelled, Detection, RuntimeProfile
@@ -524,3 +526,38 @@ def test_cancel_running_ort_terminates_in_flight():
         "that looks like the run completed and the token was noticed afterwards, "
         "not an in-flight terminate"
     )
+
+
+def test_provenance_accepts_a_safetensors_directory(tmp_path):
+    """G6 must be able to pass for a torch candidate.
+
+    For safetensors, ModelArtifact.path is the model *directory* and the lock's
+    sha256 is of model.safetensors inside it. Callers that handed
+    verify_artifact() the directory got IsADirectoryError, so G6_provenance
+    returned False for every torch candidate and no torch candidate could ever be
+    promoted. Verify the check resolves the same file the hash describes, in both
+    directions: a good artifact passes and a corrupted one is still refused.
+    """
+    from forgesight.eval.runner import _provenance
+    from forgesight.vision.types import ModelArtifact
+
+    model_dir = tmp_path / "heron"
+    model_dir.mkdir()
+    weights = model_dir / "model.safetensors"
+    weights.write_bytes(b"real weights")
+
+    artifact = ModelArtifact(
+        name="heron", path=str(model_dir), sha256=file_sha256(weights),
+        format="safetensors", repo_id="example/heron", revision="a" * 40,
+        license="Apache-2.0")
+    candidate = SimpleNamespace(artifact=artifact)
+
+    ok, detail = _provenance(candidate, None, "ws", [{"manifest_hash": "m" * 64}])
+    assert ok is True, f"G6 refused a perfectly good artifact: {detail}"
+    assert "sha verified" in detail
+
+    # And the check is still doing its job on the same layout.
+    weights.write_bytes(b"tampered")
+    ok2, detail2 = _provenance(candidate, None, "ws", [{"manifest_hash": "m" * 64}])
+    assert ok2 is False
+    assert "sha mismatch" in detail2
